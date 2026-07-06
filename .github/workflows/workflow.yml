@@ -39,11 +39,6 @@ jobs:
           if [ -n "$REDDIT_URL" ]; then
             POST_URL="$REDDIT_URL"
           else
-            curl -s -L \
-              -H "User-Agent: script:tiktok-aita-bot:v1.0 (by /u/kaleb1222)" \
-              -H "Accept: application/json" \
-              "https://www.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10" \
-              -o /tmp/reddit.json
             POST_URL=$(python3 fetch_top_post.py)
           fi
           echo "Processing: $POST_URL"
