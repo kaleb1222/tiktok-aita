@@ -42,7 +42,11 @@ jobs:
             POST_URL="$REDDIT_URL"
           else
             echo "Auto-fetching top AITA post of the week..."
-            REDDIT_JSON=$(curl -s -A "Mozilla/5.0" "https://old.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10")
+            REDDIT_JSON=$(curl -s -L \
+              -H "User-Agent: script:tiktok-aita-bot:v1.0 (by /u/kaleb1222)" \
+              -H "Accept: application/json" \
+              "https://www.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10")
+            echo "Reddit response length: ${#REDDIT_JSON}"
             POST_URL=$(echo "$REDDIT_JSON" | python3 -c "import json,sys; posts=json.load(sys.stdin)['data']['children']; print([p['data']['url'] for p in posts if not p['data']['stickied'] and p['data'].get('is_self')][0])")
           fi
           echo "Processing: $POST_URL"
