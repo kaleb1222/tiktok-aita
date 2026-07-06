@@ -1,15 +1,12 @@
 name: Generate TikTok Video
 
 on:
-  # Run manually from the Actions tab, optionally with a specific post URL
   workflow_dispatch:
     inputs:
       reddit_url:
         description: 'Reddit post URL (leave blank to auto-fetch top AITA post of the week)'
         required: false
         type: string
-
-  # Auto-run every Monday at noon UTC
   schedule:
     - cron: '0 12 * * 1'
 
@@ -20,51 +17,35 @@ jobs:
       contents: read
 
     steps:
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ── 2. Python + audio generation ─────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install Python dependencies
         run: pip install -r generate-assets/requirements.txt
 
       - name: Download NLTK data
-        run: |
-          python3 -c "
-          import nltk
-          for pkg in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger']:
-              nltk.download(pkg, quiet=True)
-          "
+        run: python3 -c "import nltk; [nltk.download(p, quiet=True) for p in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger']]"
 
       - name: Fetch Reddit post and generate audio
+        env:
+          REDDIT_URL: ${{ inputs.reddit_url }}
         run: |
           cd generate-assets
-
-          if [ -n "${{ inputs.reddit_url }}" ]; then
-            POST_URL="${{ inputs.reddit_url }}"
+          if [ -n "$REDDIT_URL" ]; then
+            POST_URL="$REDDIT_URL"
           else
             echo "Auto-fetching top AITA post of the week..."
-            POST_URL=$(curl -s -A "Mozilla/5.0 (compatible; aita-bot/1.0)" \
-              "https://old.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10" | \
-              python3 -c "
-          import json, sys
-          posts = json.load(sys.stdin)['data']['children']
-          filtered = [p['data']['url'] for p in posts
-                      if not p['data']['stickied'] and p['data'].get('is_self', False)]
-          print(filtered[0])
-          ")
+            REDDIT_JSON=$(curl -s -A "Mozilla/5.0" "https://old.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10")
+            POST_URL=$(echo "$REDDIT_JSON" | python3 -c "import json,sys; posts=json.load(sys.stdin)['data']['children']; print([p['data']['url'] for p in posts if not p['data']['stickied'] and p['data'].get('is_self')][0])")
           fi
-
           echo "Processing: $POST_URL"
           python3 run.py "$POST_URL"
 
-      # ── 3. Copy generated assets into Remotion's public folder ───────────────
       - name: Copy assets to Remotion public/
         run: |
           WORKSPACE=$(ls -dt generate-assets/workspace/*/ | head -1)
@@ -73,28 +54,23 @@ jobs:
           mkdir -p video-generator/public/sounds
           cp "$WORKSPACE/sounds/"*.mp3 video-generator/public/sounds/
 
-      # ── 4. Background video (downloaded fresh each run via yt-dlp) ──────────
       - name: Download background video
+        env:
+          VIDEO_ID: ${{ vars.BACKGROUND_VIDEO_ID }}
         run: |
-          # Default to the vertical no-copyright Minecraft parkour video.
-          # Override by setting BACKGROUND_VIDEO_ID as a repository variable.
-          VIDEO_ID="${{ vars.BACKGROUND_VIDEO_ID }}"
-          VIDEO_ID="${VIDEO_ID:-s600FYgI5-s}"
-          echo "Downloading background video: https://youtu.be/$VIDEO_ID"
+          VID="${VIDEO_ID:-s600FYgI5-s}"
+          echo "Downloading background video: https://youtu.be/$VID"
           pip install yt-dlp --quiet
-          yt-dlp "https://www.youtube.com/watch?v=$VIDEO_ID" \
+          yt-dlp "https://www.youtube.com/watch?v=$VID" \
             --format "bestvideo[height<=1920][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
             --merge-output-format mp4 \
             -o "video-generator/public/parkour.mp4" \
             --no-playlist
 
-      # ── 5. Node + Remotion render ─────────────────────────────────────────────
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: video-generator/package-lock.json
 
       - name: Install Node.js dependencies
         run: cd video-generator && npm install
@@ -105,13 +81,11 @@ jobs:
       - name: Render video
         run: |
           cd video-generator
-          OUTPUT=$(cat public/script.json | python3 -c \
-            "import json,sys; print(json.load(sys.stdin)['title']['filename'])")
+          OUTPUT=$(python3 -c "import json; print(json.load(open('public/script.json'))['title']['filename'])")
           mkdir -p out
           echo "Rendering to: out/$OUTPUT"
           npx remotion render src/index.tsx Main "out/$OUTPUT"
 
-      # ── 6. Upload artifact ────────────────────────────────────────────────────
       - name: Upload rendered video
         uses: actions/upload-artifact@v4
         with:
