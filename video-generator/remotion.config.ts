@@ -1,5 +1,5 @@
-import { Config } from 'remotion';
+import { Config } from '@remotion/cli/config';
 
-Config.Rendering.setImageFormat('jpeg');
-Config.Output.setOverwriteOutput(true);
-Config.Output.setCrf(1);
+Config.setImageFormat('jpeg');
+Config.setOverwriteOutput(true);
+Config.setCrf(18);

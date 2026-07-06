@@ -1,264 +1,262 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Emoji, EmojiProvider } from 'react-apple-emojis';
-import { AbsoluteFill, Audio, Composition, continueRender, delayRender, Img, interpolate, random, Sequence, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import emojiData from './emoji-data.json';
-import "./style.css";
+import React from 'react';
+import {
+  AbsoluteFill,
+  Audio,
+  Composition,
+  OffthreadVideo,
+  Sequence,
+  interpolate,
+  staticFile,
+  useCurrentFrame,
+} from 'remotion';
 
+const FPS = 30;
+const WIDTH = 1080;
+const HEIGHT = 1920;
 
-interface JustContent {
-	text: string,
-	duration: number,
-	start: number,
-	audioFile: string,
-	emoji: string[]
-}
+// Thick black text outline via stacked text-shadow
+const OUTLINE =
+  '-3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,' +
+  ' 0 3px 0 #000, 0 -3px 0 #000, 3px 0 0 #000, -3px 0 0 #000';
 
-var img = Img
-
-export const RemotionVideo: React.FC = () => {
-
-	const baseUrl = 'https://storage.googleapis.com/tiktok-video-assets/video-assets'
-	const projectId = process.env.REMOTION_PROJECT_ID //'aita_for_wearing_jeans_and_a_top_at_my_sisters'
-	const projectAssets = `${baseUrl}/${projectId}`
-	const scriptUrl = `${baseUrl}/${projectId}/script.json`
-
-	const [content, setContent] = useState<JustContent[]>([])
-	const [totalDuration, setTotalDuration] = useState(0)
-	const [handle] = useState(() => delayRender())
-
-	const fetchData = useCallback(async () => {
-		console.log(scriptUrl)
-		const headers = new Headers()
-		headers.append('Content-Type', 'application/json');
-		headers.append('Accept', 'application/json');
-		headers.append('Origin', 'http://localhost:3000');
-		const response = await fetch(scriptUrl, {})
-		const json = await response.json()
-
-		const parsedContent: JustContent[] = [json.title, ...json.script]
-			.map(
-				entry => ({
-					text: entry.text,
-					duration: Math.max(entry.duration, 1),
-					audioFile: `${projectAssets}/sounds/${entry.audio_file}`,
-					start: 0,
-					emoji: [entry.emoji]
-				})
-			)
-		setContent(parsedContent)
-		setTotalDuration(
-			Math.ceil(
-				parsedContent.reduce(
-					(acc, cur) => acc + cur.duration,
-					0
-				)
-			)
-		)
-
-		continueRender(handle)
-	}, [handle])
-
-	useEffect(() => {
-		fetchData()
-	}, [])
-
-
-	const FPS = 30;
-	return (
-		<>
-			<Composition
-				id="Main"
-				component={Main}
-				defaultProps={{
-					content
-				}}
-				durationInFrames={FPS * Math.max(Math.ceil(totalDuration), 1)}
-				fps={FPS}
-				width={1080}
-				height={1920}
-			/>
-		</>
-	);
+type Segment = {
+  text: string;
+  duration: number;
+  audio_file: string;
+  emoji?: string;
 };
 
+type ScriptData = {
+  title: Segment;
+  script: Segment[];
+  url: string;
+  workdir: string;
+};
 
-const Main: React.FC<{
-	content: JustContent[]
-}> = ({ content }) => {
-	const { fps, durationInFrames } = useVideoConfig();
-	return (
-		<EmojiProvider data={emojiData}>
-			<AbsoluteFill className='gradient-background'>
-				{
-					content
-						.map(
-							(curContent, i) => {
-								return (
-									<Sequence
-										name={`Content ${i}`}
-										key={`Content ${i}`}
-										durationInFrames={Math.ceil((curContent.duration) * fps)}
-										from={
-											Math.floor(
-												fps * content.slice(0, i)
-													.reduce(
-														(acc, cur) => acc + cur.duration,
-														0
-													)
-											)
-										}
-									>
-										<ContentSequence
-											key={i}
-											content={curContent}
-											index={i}
-											duration={(curContent.duration) * fps}
-										/>
-									</Sequence>
-								)
-							}
-						)
-				}
-			</AbsoluteFill>
-		</EmojiProvider >
-	)
-}
+export type MainProps = {
+  scriptData: ScriptData;
+};
 
-type ContentProps = {
-	content: JustContent,
-	index: number,
-	duration: number
-}
+// ─── Word-by-word pop-in animation ───────────────────────────────────────────
 
-const ContentSequence = (props: ContentProps) => {
-	const { content, index, duration } = props
-	const frame = useCurrentFrame()
-	const { fps, height, width } = useVideoConfig()
+const WordAnimation: React.FC<{ text: string }> = ({ text }) => {
+  const frame = useCurrentFrame();
+  const words = text.split(' ');
 
-	const opacity = (offset: number) => {
-		return Math.min(
-			interpolate(frame - offset, [0, 10], [0, 1]),
-			interpolate(frame - offset, [duration - 10, duration], [1, 0], {
-				extrapolateLeft: 'clamp'
-			}),
-		)
-	}
-	const translate = (offset: number) => spring({ frame: frame - offset, fps, to: -20 })
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '0 60px',
+      }}
+    >
+      {words.map((word, i) => {
+        const start = i * 4;
+        const opacity = interpolate(frame, [start, start + 6], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        const y = interpolate(frame, [start, start + 8], [18, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        return (
+          <span
+            key={i}
+            style={{
+              opacity,
+              transform: `translateY(${y}px)`,
+              fontSize: 60,
+              fontWeight: 900,
+              color: '#FFFFFF',
+              fontFamily: '"Arial Black", Arial, sans-serif',
+              textShadow: OUTLINE,
+              lineHeight: 1.35,
+            }}
+          >
+            {word}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
 
-	const factor = (index % 2 === 0 ? -1 : 1)
-	const rotate = factor * random(index)
-	const xMove = factor * random(index) * 20
-	const yMove = factor * height / 2 * 0.3 * 0
+// ─── Single story segment (title card or body phrase) ────────────────────────
 
-	const emojiSize = 540 / content.emoji.length
-	const emojiDisplacement = yMove * -1 * 0
-	const numWords = content.text.split(" ").length
+const ContentSequence: React.FC<{
+  segment: Segment;
+  isTitle: boolean;
+  audioSrc: string;
+  durationFrames: number;
+}> = ({ segment, isTitle, audioSrc, durationFrames }) => {
+  const frame = useCurrentFrame();
 
-	console.log(({
-		yMove,
-		emojiDisplacement
-	}))
+  // Fade-to-black at end for smooth transitions
+  const fadeOut = interpolate(frame, [durationFrames - 12, durationFrames - 2], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
 
-	const pt = 150
-	const pr = 150
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <Audio src={audioSrc} />
 
-	const EmojiComponent = () => (
-		content.emoji.filter(e => !!e).length ? (
-			<div style={{
-				display: "flex",
-				justifyContent: "center",
-				width: "100%",
-				opacity: opacity(0),
-				transform: `rotate(${-5 * rotate}deg)`,
-				marginTop: '10em',
-				background: 'rgba(255, 255, 255, 0.5',
-				padding: '5em',
-				borderRadius: '20em',
-			}}>
-				{
-					content.emoji.map(
-						e => <Emoji key={e} name={e} width={emojiSize} />
-					)
-				}
-			</div>
-		) : null
-	)
-	const TextComponent = () => (
-		<div style={{
-			padding: "1em",
-			paddingLeft: '4em',
-			paddingRight: '4em',
-			width: '100%',
-			textAlign: "center",
-			transform: `rotate(${3 * rotate}deg)`,
-			background: 'black',
-			color: 'white',
-			borderRadius: '4em',
-			opacity: opacity(0) * 0.95,
-			maxWidth: "100%",
-			marginTop: '10em'
-		}}
-		>
-			<p style={{
-				fontSize: '3.5em',
-				textAlign: "center",
-				fontFamily: "arial, sans-serif",
-				fontWeight: "bold",
-			}}>
-				{
-					content.text
-						.split(' ')
-						.map(
-							(word, i) => (
-								<span style={{
-									display: 'inline-block',
-									opacity: opacity(i),
-									transform: `translateY(${translate(i)}px)`,
-									marginLeft: 11
-								}}
-								>
-									{word}
-								</span>
-							)
-						)
-				}
-			</p>
-		</div>
-	)
+      {/* "AM I THE A-HOLE?" banner on title card only */}
+      {isTitle && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 140,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            padding: '0 60px',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 44,
+              fontWeight: 900,
+              color: '#FF4444',
+              fontFamily: '"Arial Black", Arial, sans-serif',
+              textShadow: '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000',
+              letterSpacing: 2,
+            }}
+          >
+            AM I THE A-HOLE?
+          </span>
+        </div>
+      )}
 
-	let ordering = [];
-	if (factor > 0) {
-		ordering = [
-			EmojiComponent,
-			TextComponent
-		]
-	}
-	else {
-		ordering = [
-			TextComponent,
-			EmojiComponent
-		]
-	}
+      <WordAnimation text={segment.text} />
 
-	return (
-		<AbsoluteFill>
-			<div style={{
-				display: "flex",
-				alignItems: "center",
-				justifyContent: "center",
-				marginRight: '10em',
-				marginTop: '10em'
-			}}>
-				<div style={{
-					padding: "5em"
-				}}>
-					{
-						ordering.map(component => component())
-					}
-				</div>
-			</div>
-			<Audio src={content.audioFile} />
-		</AbsoluteFill>
-	)
+      {/* CTA badge pinned to bottom on last segment */}
+      {!isTitle && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 180,
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 30,
+              fontWeight: 700,
+              color: '#FFD700',
+              fontFamily: 'Arial, sans-serif',
+              textShadow: '-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000',
+              opacity: interpolate(frame, [0, 10], [0, 1], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              }),
+            }}
+          >
+            💬 Comment your verdict below
+          </span>
+        </div>
+      )}
 
-}
+      {/* Fade overlay */}
+      <AbsoluteFill
+        style={{ backgroundColor: `rgba(0,0,0,${fadeOut})`, pointerEvents: 'none' }}
+      />
+    </AbsoluteFill>
+  );
+};
+
+// ─── Root composition ─────────────────────────────────────────────────────────
+
+export const Main: React.FC<MainProps> = ({ scriptData }) => {
+  const segments = [scriptData.title, ...scriptData.script];
+
+  // Build sequence timing — each phrase gets its audio duration + 15-frame breathing room
+  let offset = 0;
+  const items = segments.map((seg, i) => {
+    const durationFrames = Math.ceil(seg.duration * FPS) + 15;
+    const from = offset;
+    offset += durationFrames;
+    const audioSrc =
+      i === 0 ? staticFile('sounds/title.mp3') : staticFile(`sounds/${seg.audio_file}`);
+    return { seg, from, durationFrames, audioSrc, isTitle: i === 0 };
+  });
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {/* Minecraft parkour — looping background, muted */}
+      <OffthreadVideo
+        src={staticFile('parkour.mp4')}
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        muted
+        loop
+      />
+
+      {/* Subtle dark overlay so white text stays readable */}
+      <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.38)' }} />
+
+      {/* Story segments */}
+      {items.map(({ seg, from, durationFrames, audioSrc, isTitle }, i) => (
+        <Sequence key={i} from={from} durationInFrames={durationFrames} name={isTitle ? 'Title' : `Phrase ${i}`}>
+          <ContentSequence
+            segment={seg}
+            isTitle={isTitle}
+            audioSrc={audioSrc}
+            durationFrames={durationFrames}
+          />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+// ─── Remotion entry point ─────────────────────────────────────────────────────
+
+const PLACEHOLDER: MainProps = {
+  scriptData: {
+    title: {
+      text: 'Put script.json in video-generator/public/ to preview',
+      duration: 3,
+      audio_file: 'title.mp3',
+    },
+    script: [],
+    url: '',
+    workdir: '',
+  },
+};
+
+export const RemotionVideo: React.FC = () => {
+  return (
+    <Composition
+      id="Main"
+      component={Main}
+      // calculateMetadata fetches the generated script and sets duration dynamically
+      calculateMetadata={async () => {
+        const response = await fetch(staticFile('script.json'));
+        const data = (await response.json()) as ScriptData;
+        const totalFrames = [data.title, ...data.script].reduce(
+          (sum, seg) => sum + Math.ceil(seg.duration * FPS) + 15,
+          0,
+        );
+        return {
+          durationInFrames: totalFrames,
+          fps: FPS,
+          width: WIDTH,
+          height: HEIGHT,
+          props: { scriptData: data } as MainProps,
+        };
+      }}
+      defaultProps={PLACEHOLDER}
+      durationInFrames={300}
+      fps={FPS}
+      width={WIDTH}
+      height={HEIGHT}
+    />
+  );
+};

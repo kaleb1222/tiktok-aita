@@ -1,13 +1,23 @@
-*.mp4
-*.mp3
 node_modules
 dist
 .DS_Store
 .env
-
-# Ignore the output video from Git but not videos you import into src/.
-out
-done
-workspace
 __pycache__
-*.txt
+
+# Generated audio/video outputs
+*.mp3
+out/
+done/
+workspace/
+generate-assets/workspace/
+
+# Generated render assets (auto-copied before render)
+video-generator/public/sounds/
+video-generator/public/script.json
+
+# Rendered videos (download from GitHub Actions artifacts instead)
+video-generator/out/
+
+# Allow committing the background video if small enough
+# Large files should use Git LFS or BACKGROUND_VIDEO_URL repo variable
+!video-generator/public/parkour.mp4

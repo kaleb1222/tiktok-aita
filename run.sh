@@ -1,50 +1,54 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-set -e
-set -o nounset
-set -o pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-script_dir="$(dirname $0)"
-cd $script_dir
+# ── Get Reddit URL ────────────────────────────────────────────────────────────
+if [ "${1:-}" != "" ]; then
+  POST_URL="$1"
+else
+  echo "Fetching top AITA post from this week..."
+  POST_URL=$(curl -s -A "Mozilla/5.0 (compatible; aita-bot/1.0)" \
+    "https://old.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10" | \
+    python3 -c "
+import json, sys
+posts = json.load(sys.stdin)['data']['children']
+filtered = [p['data']['url'] for p in posts
+            if not p['data']['stickied'] and p['data'].get('is_self', False)]
+print(filtered[0])
+")
+fi
 
-input_queue="$PWD/input.txt"
-workspace_root="$PWD/generate-assets/workspace"
-done_dir="$PWD/generate-assets/done"
-bucket_root="gs://tiktok-video-assets"
-bucket="$bucket_root/video-assets"
-session="session-$(date +%Y-%m-%d_%H-%M-%S)"
+echo "Processing: $POST_URL"
 
-mkdir -p $workspace_root
+# ── Generate audio + script.json ─────────────────────────────────────────────
+cd "$SCRIPT_DIR/generate-assets"
+python3 run.py "$POST_URL"
 
-curl -A 'random' -v 'https://old.reddit.com/r/AmItheAsshole/top.json?t=week' | jq -r '.data.children[] | .data | .url' | grep -v update | grep -Pv "^$" | head -n100 | shuf -n2 > $input_queue
-cat $input_queue
-video_urls=$(cat $input_queue)
+# ── Copy assets into Remotion public/ ────────────────────────────────────────
+WORKSPACE=$(ls -dt "$SCRIPT_DIR/generate-assets/workspace/"*/ | head -1)
+echo "Workspace: $WORKSPACE"
 
-for video_url in $video_urls
-do
-(
-    cd generate-assets/
-    python3 run.py $video_url
-)
-done
+mkdir -p "$SCRIPT_DIR/video-generator/public/sounds"
+cp "$WORKSPACE/script.json" "$SCRIPT_DIR/video-generator/public/script.json"
+cp "$WORKSPACE/sounds/"*.mp3 "$SCRIPT_DIR/video-generator/public/sounds/"
 
-for name in $(ls $workspace_root); do
-    workdir="$workspace_root/$name"
-    gsutil -m cp -r $workdir $bucket
-    filename="$(cat $workdir/script.json | jq -r '.title | .filename')"
-    video=$workdir/$filename
-    export REMOTION_PROJECT_ID=$name
-    (
-        cd video-generator/
-        npx remotion render src/index.tsx Main $video
-        echo $video
-        gsutil cp $video $bucket_root/videos/$session/
-    )
-    mv -f $workdir $done_dir
-done
+# ── Render video ──────────────────────────────────────────────────────────────
+cd "$SCRIPT_DIR/video-generator"
 
-echo "Session done: $session"
+if [ ! -f "public/parkour.mp4" ]; then
+  echo ""
+  echo "ERROR: public/parkour.mp4 not found."
+  echo "Add a royalty-free Minecraft parkour video as video-generator/public/parkour.mp4"
+  echo "See video-generator/public/README.md for instructions."
+  exit 1
+fi
 
-echo > $input_queue
+OUTPUT=$(python3 -c "import json; d=json.load(open('public/script.json')); print(d['title']['filename'])")
+mkdir -p out
+echo "Rendering to: out/$OUTPUT"
+npx remotion render src/index.tsx Main "out/$OUTPUT"
 
-curl metadata.google.internal -i && poweroff
+echo ""
+echo "Done! Video: video-generator/out/$OUTPUT"
