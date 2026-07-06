@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       reddit_url:
-        description: 'Reddit post URL (leave blank to auto-fetch top AITA post of the week)'
+        description: 'Reddit post URL (blank = auto-fetch top AITA post)'
         required: false
         type: string
   schedule:
@@ -19,11 +19,9 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -41,20 +39,12 @@ jobs:
           if [ -n "$REDDIT_URL" ]; then
             POST_URL="$REDDIT_URL"
           else
-            echo "Auto-fetching top AITA post of the week..."
             curl -s -L \
               -H "User-Agent: script:tiktok-aita-bot:v1.0 (by /u/kaleb1222)" \
               -H "Accept: application/json" \
               "https://www.reddit.com/r/AmItheAsshole/top.json?t=week&limit=10" \
               -o /tmp/reddit.json
-            echo "Reddit response: $(wc -c < /tmp/reddit.json) bytes"
-            POST_URL=$(python3 -c "
-import json
-with open('/tmp/reddit.json') as f:
-    posts = json.load(f)['data']['children']
-filtered = [p['data']['url'] for p in posts if not p['data']['stickied'] and p['data'].get('is_self')]
-print(filtered[0])
-")
+            POST_URL=$(python3 fetch_top_post.py)
           fi
           echo "Processing: $POST_URL"
           python3 run.py "$POST_URL"
@@ -62,7 +52,6 @@ print(filtered[0])
       - name: Copy assets to Remotion public/
         run: |
           WORKSPACE=$(ls -dt generate-assets/workspace/*/ | head -1)
-          echo "Workspace: $WORKSPACE"
           cp "$WORKSPACE/script.json" video-generator/public/script.json
           mkdir -p video-generator/public/sounds
           cp "$WORKSPACE/sounds/"*.mp3 video-generator/public/sounds/
@@ -72,7 +61,6 @@ print(filtered[0])
           VIDEO_ID: ${{ vars.BACKGROUND_VIDEO_ID }}
         run: |
           VID="${VIDEO_ID:-s600FYgI5-s}"
-          echo "Downloading background video: https://youtu.be/$VID"
           pip install yt-dlp --quiet
           yt-dlp "https://www.youtube.com/watch?v=$VID" \
             --format "bestvideo[height<=1920][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
@@ -80,15 +68,14 @@ print(filtered[0])
             -o "video-generator/public/parkour.mp4" \
             --no-playlist
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install Node.js dependencies
+      - name: Install Node dependencies
         run: cd video-generator && npm install
 
-      - name: Install Chromium for Remotion
+      - name: Install Chromium
         run: cd video-generator && npx remotion browser ensure
 
       - name: Render video
@@ -96,10 +83,9 @@ print(filtered[0])
           cd video-generator
           OUTPUT=$(python3 -c "import json; print(json.load(open('public/script.json'))['title']['filename'])")
           mkdir -p out
-          echo "Rendering to: out/$OUTPUT"
           npx remotion render src/index.tsx Main "out/$OUTPUT"
 
-      - name: Upload rendered video
+      - name: Upload video artifact
         uses: actions/upload-artifact@v4
         with:
           name: tiktok-video-${{ github.run_id }}
