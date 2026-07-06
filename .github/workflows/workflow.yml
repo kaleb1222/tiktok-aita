@@ -8,7 +8,9 @@ on:
         required: false
         type: string
   schedule:
-    - cron: '0 12 * * 1'
+    - cron: '0 6 * * *'
+    - cron: '0 14 * * *'
+    - cron: '0 22 * * *'
 
 jobs:
   generate-video:
