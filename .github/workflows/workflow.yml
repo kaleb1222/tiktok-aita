@@ -73,21 +73,20 @@ jobs:
           mkdir -p video-generator/public/sounds
           cp "$WORKSPACE/sounds/"*.mp3 video-generator/public/sounds/
 
-      # ── 4. Background video ──────────────────────────────────────────────────
-      - name: Get background video
+      # ── 4. Background video (downloaded fresh each run via yt-dlp) ──────────
+      - name: Download background video
         run: |
-          if [ -f "video-generator/public/parkour.mp4" ]; then
-            echo "Using committed parkour.mp4"
-          elif [ -n "${{ vars.BACKGROUND_VIDEO_URL }}" ]; then
-            echo "Downloading background video from repository variable..."
-            curl -L "${{ vars.BACKGROUND_VIDEO_URL }}" \
-              -o video-generator/public/parkour.mp4
-          else
-            echo "::error::No background video found!"
-            echo "::error::Either commit video-generator/public/parkour.mp4 or set the"
-            echo "::error::BACKGROUND_VIDEO_URL repository variable to a direct download URL."
-            exit 1
-          fi
+          # Default to the vertical no-copyright Minecraft parkour video.
+          # Override by setting BACKGROUND_VIDEO_ID as a repository variable.
+          VIDEO_ID="${{ vars.BACKGROUND_VIDEO_ID }}"
+          VIDEO_ID="${VIDEO_ID:-s600FYgI5-s}"
+          echo "Downloading background video: https://youtu.be/$VIDEO_ID"
+          pip install yt-dlp --quiet
+          yt-dlp "https://www.youtube.com/watch?v=$VIDEO_ID" \
+            --format "bestvideo[height<=1920][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
+            --merge-output-format mp4 \
+            -o "video-generator/public/parkour.mp4" \
+            --no-playlist
 
       # ── 5. Node + Remotion render ─────────────────────────────────────────────
       - name: Set up Node.js
@@ -98,7 +97,7 @@ jobs:
           cache-dependency-path: video-generator/package-lock.json
 
       - name: Install Node.js dependencies
-        run: cd video-generator && npm ci
+        run: cd video-generator && npm install
 
       - name: Install Chromium for Remotion
         run: cd video-generator && npx remotion browser ensure

@@ -18,6 +18,5 @@ video-generator/public/script.json
 # Rendered videos (download from GitHub Actions artifacts instead)
 video-generator/out/
 
-# Allow committing the background video if small enough
-# Large files should use Git LFS or BACKGROUND_VIDEO_URL repo variable
-!video-generator/public/parkour.mp4
+# Background video — downloaded by run.sh / GitHub Actions via yt-dlp (87MB, too large to commit)
+video-generator/public/parkour.mp4
