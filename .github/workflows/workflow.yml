@@ -34,6 +34,8 @@ jobs:
       - name: Fetch Reddit post and generate audio
         env:
           REDDIT_URL: ${{ inputs.reddit_url }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
           cd generate-assets
           if [ -n "$REDDIT_URL" ]; then
