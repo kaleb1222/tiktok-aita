@@ -25,22 +25,32 @@ def pinput(prompt, text):
     return result
 
 
-def get_post(url):
-    request = urllib.request.Request(
-        url=post[:-1] + ".json",
-        data=None,
-        headers={
-            'User-Agent': user_agent
-        }
-    )
+CACHE_FILE = "/tmp/reddit_post.json"
 
-    with urllib.request.urlopen(request) as url:
-        json_data = json.loads(url.read().decode())
+
+def get_post(url):
+    # Use cached data written by fetch_top_post.py to avoid a second Reddit request
+    # (GitHub Actions IPs are blocked by Reddit's .json endpoint)
+    import os
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+        selftext = unescape(clean_up_text(data["selftext"]))
+        title = clean_up_text(data["title"].replace('"', ""))
+        return (selftext, title)
+
+    # Fallback: direct fetch (works locally, blocked on GH Actions)
+    request = urllib.request.Request(
+        url=url.rstrip("/") + ".json",
+        data=None,
+        headers={'User-Agent': user_agent}
+    )
+    with urllib.request.urlopen(request) as resp:
+        json_data = json.loads(resp.read().decode())
 
     data = json_data[0]["data"]["children"][0]["data"]
     selftext = unescape(clean_up_text(data["selftext"]))
-    title = clean_up_text(data["title"].replace("\"", ""))
-
+    title = clean_up_text(data["title"].replace('"', ""))
     return (selftext, title)
 
 
