@@ -32,8 +32,12 @@ async def _synthesize_edge_async(text: str, outfile, voice: str) -> None:
 def synthesize_audio(text: str, outfile, gender: str = "female") -> None:
     voice = VOICE_FEMALE if gender.lower().startswith("f") else VOICE_MALE
     text = _clean_for_tts(text)
-    if not text:
+    # Skip if there are no actual words (e.g. phrase is just "-" or "," after cleaning)
+    if not text or not re.search(r"\w", text):
+        print(f"[TTS] Skipping empty/no-word phrase: {repr(text)}")
         return
+
+    print(f"[TTS] Synthesizing ({len(text)} chars): {text[:60]!r}...")
 
     # Try gTTS first (reliable in GitHub Actions)
     for attempt in range(1, 4):
