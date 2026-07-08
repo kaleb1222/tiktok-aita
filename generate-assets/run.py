@@ -80,7 +80,7 @@ def main(post_url):
     for (i, phrase) in enumerate(split_and_correct_text(selftext)):
         # if i == 3:
         #     break
-        if not phrase:
+        if not phrase or not re.search(r'\w', phrase):
             continue
         phrases.append(phrase)
 
