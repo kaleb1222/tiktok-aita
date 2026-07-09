@@ -51,17 +51,18 @@ jobs:
           mkdir -p video-generator/public/sounds
           cp "$WORKSPACE/sounds/"*.mp3 video-generator/public/sounds/
 
+      - name: Cache background video
+        id: cache-video
+        uses: actions/cache@v4
+        with:
+          path: video-generator/public/parkour.mp4
+          key: background-video-v1
+
       - name: Download background video
-        env:
-          VIDEO_ID: ${{ vars.BACKGROUND_VIDEO_ID }}
+        if: steps.cache-video.outputs.cache-hit != 'true'
         run: |
-          VID="${VIDEO_ID:-s600FYgI5-s}"
-          pip install yt-dlp --quiet
-          yt-dlp "https://www.youtube.com/watch?v=$VID" \
-            --format "bestvideo[height<=1920][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" \
-            --merge-output-format mp4 \
-            -o "video-generator/public/parkour.mp4" \
-            --no-playlist
+          curl -L -o video-generator/public/parkour.mp4 \
+            "https://github.com/kaleb1222/tiktok-aita/releases/download/assets/parkour.mp4"
 
       - uses: actions/setup-node@v4
         with:
