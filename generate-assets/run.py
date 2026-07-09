@@ -72,7 +72,7 @@ def main(post_url):
     print(title)
     print()
 
-    gender = find_gender(title + selftext)
+    gender = "male"
     print(f"Gender: {gender}")
 
     phrases = []

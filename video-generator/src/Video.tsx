@@ -72,7 +72,7 @@ const WordAnimation: React.FC<{ text: string }> = ({ text }) => {
               transform: `translateY(${y}px)`,
               fontSize: 60,
               fontWeight: 900,
-              color: '#FFFFFF',
+              color: '#FFD700',
               fontFamily: '"Arial Black", Arial, sans-serif',
               textShadow: OUTLINE,
               lineHeight: 1.35,

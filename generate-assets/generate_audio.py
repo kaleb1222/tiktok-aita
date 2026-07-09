@@ -3,8 +3,8 @@ import re
 import time
 from pathlib import Path
 
-# Primary: gTTS (Google, HTTPS-based, works anywhere including GitHub Actions)
-# Fallback: edge-tts (Microsoft neural, higher quality, but blocked on some CI runners)
+# Primary: edge-tts (Microsoft neural voices — much more natural)
+# Fallback: gTTS (Google, HTTPS-based, works anywhere including GitHub Actions)
 
 VOICE_FEMALE = "en-US-JennyNeural"
 VOICE_MALE = "en-US-ChristopherNeural"
@@ -37,9 +37,16 @@ def synthesize_audio(text: str, outfile, gender: str = "female") -> None:
         print(f"[TTS] Skipping empty/no-word phrase: {repr(text)}")
         return
 
-    print(f"[TTS] Synthesizing ({len(text)} chars): {text[:60]!r}...")
+    print(f"[TTS] Synthesizing ({len(text)} chars, voice={voice}): {text[:60]!r}...")
 
-    # Try gTTS first (reliable in GitHub Actions)
+    # Try edge-tts first (Microsoft neural — much more natural)
+    try:
+        asyncio.run(_synthesize_edge_async(text, outfile, voice))
+        return
+    except Exception as e:
+        print(f"edge-tts failed, falling back to gTTS: {e}")
+
+    # Fallback: gTTS (robotic but reliable everywhere)
     for attempt in range(1, 4):
         try:
             _synthesize_gtts(text, outfile)
@@ -49,10 +56,4 @@ def synthesize_audio(text: str, outfile, gender: str = "female") -> None:
                 print(f"gTTS attempt {attempt}/3 failed: {e}, retrying in 2s...")
                 time.sleep(2)
             else:
-                print(f"gTTS failed after 3 attempts, falling back to edge-tts: {e}")
-
-    # Fallback to edge-tts (higher quality, works locally)
-    try:
-        asyncio.run(_synthesize_edge_async(text, outfile, voice))
-    except Exception as e:
-        raise RuntimeError(f"Both gTTS and edge-tts failed. Last error: {e}")
+                raise RuntimeError(f"Both edge-tts and gTTS failed. Last error: {e}")
