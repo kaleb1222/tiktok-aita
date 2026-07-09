@@ -40,15 +40,24 @@ def api_get(url, token):
         return json.loads(r.read())
 
 
+class _StripAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Strip Authorization header when redirecting away from github.com (e.g. to Azure Blob)."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req and "github.com" not in newurl:
+            new_req.headers.pop("Authorization", None)
+            new_req.unredirected_hdrs.pop("Authorization", None)
+        return new_req
+
+
 def download_artifact_zip(download_url, token):
-    """Download artifact ZIP, following the redirect GitHub sends."""
+    """Download artifact ZIP — GitHub redirects to Azure; strip auth header on redirect."""
     req = urllib.request.Request(download_url, headers={
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "tiktok-aita-downloader",
     })
-    # GitHub redirects to a pre-signed S3 URL — need to handle redirect manually
-    opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
+    opener = urllib.request.build_opener(_StripAuthOnRedirect)
     with opener.open(req, timeout=120) as r:
         return r.read()
 
