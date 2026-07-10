@@ -1,10 +1,12 @@
 """
 Fetches the top self-post from r/AmItheAsshole this week via RSS.
+Skips posts already listed in USED_POSTS_FILE (env var, one ID per line).
 Writes full post data (url, title, selftext) to /tmp/reddit_post.json
 so run.py can consume it without making a second Reddit request.
 Prints the post URL to stdout on success, exits 1 on failure.
 """
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -24,7 +26,20 @@ def strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def fetch_top_post() -> dict:
+def load_used_ids() -> set:
+    path = os.environ.get("USED_POSTS_FILE", "")
+    if not path or not os.path.exists(path):
+        return set()
+    with open(path) as f:
+        return {line.strip() for line in f if line.strip()}
+
+
+def post_id_from_url(url: str) -> str:
+    m = re.search(r"/comments/([^/]+)", url)
+    return m.group(1) if m else ""
+
+
+def fetch_top_post(used_ids: set) -> dict:
     req = urllib.request.Request(RSS_URL, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=20) as resp:
         raw = resp.read()
@@ -49,19 +64,25 @@ def fetch_top_post() -> dict:
         if "[mod]" in title.lower() or "welcome to" in title.lower():
             continue
 
+        post_id = post_id_from_url(url)
+        if post_id in used_ids:
+            print(f"Skipping already-used post: {post_id}", file=sys.stderr)
+            continue
+
         selftext = strip_html(content_html)
         # RSS wraps content in an outer div — skip if content is essentially empty
         if len(selftext) < 50:
             continue
 
-        return {"url": url, "title": title, "selftext": selftext}
+        return {"url": url, "title": title, "selftext": selftext, "id": post_id}
 
     raise RuntimeError("No eligible self-posts found in RSS feed")
 
 
 def main():
+    used_ids = load_used_ids()
     try:
-        post = fetch_top_post()
+        post = fetch_top_post(used_ids)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)

@@ -31,9 +31,18 @@ jobs:
       - name: Download NLTK data
         run: python3 -c "import nltk; [nltk.download(p, quiet=True) for p in ['punkt', 'punkt_tab', 'averaged_perceptron_tagger']]"
 
+      - name: Restore used posts cache
+        id: cache-used-posts
+        uses: actions/cache@v4
+        with:
+          path: used_posts.txt
+          key: used-posts-${{ github.run_number }}
+          restore-keys: used-posts-
+
       - name: Fetch Reddit post and generate audio
         env:
           REDDIT_URL: ${{ inputs.reddit_url }}
+          USED_POSTS_FILE: ${{ github.workspace }}/used_posts.txt
         run: |
           cd generate-assets
           if [ -n "$REDDIT_URL" ]; then
@@ -42,6 +51,9 @@ jobs:
             POST_URL=$(python3 fetch_top_post.py)
           fi
           echo "Processing: $POST_URL"
+          # Record used post ID to avoid repeats in future runs
+          POST_ID=$(echo "$POST_URL" | sed 's|.*/comments/\([^/]*\)/.*|\1|')
+          echo "$POST_ID" >> "$USED_POSTS_FILE"
           python3 run.py "$POST_URL"
 
       - name: Copy assets to Remotion public/
@@ -74,14 +86,15 @@ jobs:
       - name: Install Chromium
         run: cd video-generator && npx remotion browser ensure
 
-      - name: Render video
+      - name: Render videos (Part 1 and Part 2)
         run: |
           cd video-generator
-          OUTPUT=$(python3 -c "import json; print(json.load(open('public/script.json'))['title']['filename'])")
+          BASENAME=$(python3 -c "import json,re; d=json.load(open('public/script.json')); fn=d['title']['filename']; print(re.sub(r'\.mp4$', '', fn))")
           mkdir -p out
-          npx remotion render src/index.tsx Main "out/$OUTPUT"
+          npx remotion render src/index.tsx Part1 "out/${BASENAME}-part1.mp4"
+          npx remotion render src/index.tsx Part2 "out/${BASENAME}-part2.mp4"
 
-      - name: Upload video artifact
+      - name: Upload video artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tiktok-video-${{ github.run_id }}
