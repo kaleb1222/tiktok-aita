@@ -63,18 +63,22 @@ jobs:
           mkdir -p video-generator/public/sounds
           cp "$WORKSPACE/sounds/"*.mp3 video-generator/public/sounds/
 
-      - name: Cache background video
-        id: cache-video
-        uses: actions/cache@v4
-        with:
-          path: video-generator/public/parkour.mp4
-          key: background-video-v1
-
       - name: Download background video
-        if: steps.cache-video.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -L -o video-generator/public/parkour.mp4 \
-            "https://github.com/kaleb1222/tiktok-aita/releases/download/assets/parkour.mp4"
+          # List all parkour*.mp4 assets in the release, pick one at random
+          VIDEOS=$(gh api repos/${{ github.repository }}/releases/tags/assets \
+            --jq '[.assets[] | select(.name | test("^parkour.*\\.mp4$")) | .name]')
+          COUNT=$(echo "$VIDEOS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
+          IDX=$((RANDOM % COUNT))
+          CHOSEN=$(echo "$VIDEOS" | python3 -c "import sys,json; a=json.load(sys.stdin); print(a[int('$IDX')])")
+          echo "Background video: $CHOSEN (${IDX}+1 of ${COUNT})"
+          gh release download assets \
+            --repo ${{ github.repository }} \
+            --pattern "$CHOSEN" \
+            --output video-generator/public/parkour.mp4 \
+            --clobber
 
       - uses: actions/setup-node@v4
         with:
