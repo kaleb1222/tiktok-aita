@@ -14,7 +14,10 @@ import xml.etree.ElementTree as ET
 from html import unescape
 
 SUBREDDIT = "AmItheAsshole"
-RSS_URL = f"https://www.reddit.com/r/{SUBREDDIT}/top/.rss?t=week&limit=25"
+RSS_FEEDS = [
+    f"https://www.reddit.com/r/{SUBREDDIT}/top/.rss?t=week&limit=100",
+    f"https://www.reddit.com/r/{SUBREDDIT}/top/.rss?t=month&limit=100",
+]
 USER_AGENT = "tiktok-aita-bot:v2.0 (RSS reader)"
 CACHE_FILE = "/tmp/reddit_post.json"
 
@@ -40,48 +43,52 @@ def post_id_from_url(url: str) -> str:
 
 
 def fetch_top_post(used_ids: set) -> dict:
-    req = urllib.request.Request(RSS_URL, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read()
-
-    root = ET.fromstring(raw)
     ns = {"atom": "http://www.w3.org/2005/Atom"}
-
-    for entry in root.findall("atom:entry", ns):
-        title_el = entry.find("atom:title", ns)
-        link_el = entry.find("atom:link", ns)
-        content_el = entry.find("atom:content", ns)
-
-        if title_el is None or link_el is None:
+    eligible = []
+    seen = set()
+    for feed in RSS_FEEDS:
+        try:
+            req = urllib.request.Request(feed, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                root = ET.fromstring(resp.read())
+        except Exception as e:
+            print(f"feed error {feed}: {e}", file=sys.stderr)
             continue
 
-        title = (title_el.text or "").strip()
-        url = link_el.attrib.get("href", "")
-        content_html = content_el.text or "" if content_el is not None else ""
+        for entry in root.findall("atom:entry", ns):
+            title_el = entry.find("atom:title", ns)
+            link_el = entry.find("atom:link", ns)
+            content_el = entry.find("atom:content", ns)
+            if title_el is None or link_el is None:
+                continue
+            title = (title_el.text or "").strip()
+            url = link_el.attrib.get("href", "")
+            content_html = content_el.text or "" if content_el is not None else ""
+            if not url or "/comments/" not in url:
+                continue
+            low = title.lower()
+            if "[mod]" in low or "welcome to" in low:
+                continue
+            # Skip follow-up "UPDATE" + meta/forum posts — they reference a prior
+            # story and don't work as a standalone ~1-minute video.
+            if re.search(r"(?i)\bupdate\b", title) or "[meta]" in low or "open forum" in low:
+                continue
+            post_id = post_id_from_url(url)
+            if post_id in used_ids or post_id in seen:
+                continue
+            selftext = strip_html(content_html)
+            if len(selftext) < 50:
+                continue
+            seen.add(post_id)
+            eligible.append({"url": url, "title": title, "selftext": selftext, "id": post_id})
 
-        if not url or "/comments/" not in url:
-            continue
-        low = title.lower()
-        if "[mod]" in low or "welcome to" in low:
-            continue
-        # Skip follow-up "UPDATE" posts + meta/forum posts — they reference a
-        # prior story and don't work as a standalone ~1-minute video.
-        if re.search(r"(?i)\bupdate\b", title) or "[meta]" in low or "open forum" in low:
-            continue
+    if not eligible:
+        raise RuntimeError("No eligible self-posts found in RSS feeds")
 
-        post_id = post_id_from_url(url)
-        if post_id in used_ids:
-            print(f"Skipping already-used post: {post_id}", file=sys.stderr)
-            continue
-
-        selftext = strip_html(content_html)
-        # RSS wraps content in an outer div — skip if content is essentially empty
-        if len(selftext) < 50:
-            continue
-
-        return {"url": url, "title": title, "selftext": selftext, "id": post_id}
-
-    raise RuntimeError("No eligible self-posts found in RSS feed")
+    # Pick a DIFFERENT post per run so many parallel runs render distinct videos
+    # (GITHUB_RUN_NUMBER is unique+monotonic per run; falls back to 0 locally).
+    offset = int(os.environ.get("GITHUB_RUN_NUMBER", "0"))
+    return eligible[offset % len(eligible)]
 
 
 def main():
