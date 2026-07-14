@@ -3,6 +3,7 @@ import re
 import readline
 import sys
 import urllib.request
+import xml.etree.ElementTree as ET
 from html import unescape
 from pathlib import Path
 
@@ -28,9 +29,44 @@ def pinput(prompt, text):
 CACHE_FILE = "/tmp/reddit_post.json"
 
 
+_RSS_FEEDS = [
+    "https://www.reddit.com/r/AmItheAsshole/top/.rss?t=week&limit=100",
+    "https://www.reddit.com/r/AmItheAsshole/top/.rss?t=month&limit=100",
+    "https://www.reddit.com/r/AmItheAsshole/hot/.rss?limit=100",
+]
+
+
+def _strip_html(html):
+    text = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _post_from_rss(post_id):
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    for feed in _RSS_FEEDS:
+        try:
+            req = urllib.request.Request(feed, headers={'User-Agent': user_agent})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                root = ET.fromstring(resp.read())
+        except Exception:
+            continue
+        for entry in root.findall("atom:entry", ns):
+            link = entry.find("atom:link", ns)
+            href = link.attrib.get("href", "") if link is not None else ""
+            if post_id and post_id in href:
+                title_el = entry.find("atom:title", ns)
+                content_el = entry.find("atom:content", ns)
+                title = (title_el.text or "").strip() if title_el is not None else ""
+                selftext = _strip_html(content_el.text or "") if content_el is not None else ""
+                if len(selftext) >= 50:
+                    return (selftext, title)
+    return None
+
+
 def get_post(url):
-    # Use cached data written by fetch_top_post.py to avoid a second Reddit request
-    # (GitHub Actions IPs are blocked by Reddit's .json endpoint)
+    # 1) cache written by fetch_top_post.py (auto-pick flow)
     import os
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE) as f:
@@ -39,7 +75,15 @@ def get_post(url):
         title = clean_up_text(data["title"].replace('"', ""))
         return (selftext, title)
 
-    # Fallback: direct fetch (works locally, blocked on GH Actions)
+    # 2) specific URL on GH Actions (.json IP-blocked) -> pull from subreddit RSS by id
+    m = re.search(r"/comments/([^/]+)", url)
+    rss = _post_from_rss(m.group(1) if m else "")
+    if rss:
+        selftext = unescape(clean_up_text(rss[0]))
+        title = clean_up_text(rss[1].replace('"', ""))
+        return (selftext, title)
+
+    # 3) last resort: direct fetch (works locally)
     request = urllib.request.Request(
         url=url.rstrip("/") + ".json",
         data=None,
