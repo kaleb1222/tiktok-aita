@@ -326,6 +326,19 @@ async function calculateMetadataFull() {
   };
 }
 
+// Part2 is a throwaway stub (the CI workflow file can't be changed by this
+// token's scope, so it still renders a "Part2"). Keep it tiny; the downloader
+// discards it and keeps the full Part1 render.
+async function calculateMetadataStub() {
+  return {
+    durationInFrames: 30,
+    fps: FPS,
+    width: WIDTH,
+    height: HEIGHT,
+    props: { ...PLACEHOLDER } as MainProps,
+  };
+}
+
 const PLACEHOLDER: MainProps = {
   scriptData: {
     title: {
@@ -367,9 +380,9 @@ export const RemotionVideo: React.FC = () => {
       <Composition
         id="Part2"
         component={Main}
-        calculateMetadata={calculateMetadataFull}
+        calculateMetadata={calculateMetadataStub}
         defaultProps={{ ...PLACEHOLDER }}
-        durationInFrames={MIN_FRAMES}
+        durationInFrames={30}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
