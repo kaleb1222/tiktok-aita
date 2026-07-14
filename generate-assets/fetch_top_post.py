@@ -61,7 +61,12 @@ def fetch_top_post(used_ids: set) -> dict:
 
         if not url or "/comments/" not in url:
             continue
-        if "[mod]" in title.lower() or "welcome to" in title.lower():
+        low = title.lower()
+        if "[mod]" in low or "welcome to" in low:
+            continue
+        # Skip follow-up "UPDATE" posts + meta/forum posts — they reference a
+        # prior story and don't work as a standalone ~1-minute video.
+        if re.search(r"(?i)\bupdate\b", title) or "[meta]" in low or "open forum" in low:
             continue
 
         post_id = post_id_from_url(url)
