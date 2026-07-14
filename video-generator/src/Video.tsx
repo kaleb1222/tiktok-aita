@@ -56,12 +56,11 @@ const WordAnimation: React.FC<{ text: string }> = ({ text }) => {
       }}
     >
       {words.map((word, i) => {
-        const start = i * 4;
-        const opacity = interpolate(frame, [start, start + 6], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-        });
-        const y = interpolate(frame, [start, start + 8], [18, 0], {
+        // Words slide up quickly but stay fully opaque — no fade from black
+        // between phrases (each Sequence resets frame to 0, so a 0-opacity
+        // start would flash dark at every phrase boundary).
+        const start = i * 2;
+        const y = interpolate(frame, [start, start + 4], [14, 0], {
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });
@@ -69,7 +68,7 @@ const WordAnimation: React.FC<{ text: string }> = ({ text }) => {
           <span
             key={i}
             style={{
-              opacity,
+              opacity: 1,
               transform: `translateY(${y}px)`,
               fontSize: 60,
               fontWeight: 900,
@@ -105,12 +104,6 @@ const ContentSequence: React.FC<{
   showPart2Badge = false,
 }) => {
   const frame = useCurrentFrame();
-
-  // Fade-to-black at end for smooth transitions
-  const fadeOut = interpolate(frame, [durationFrames - 12, durationFrames - 2], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
 
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
@@ -200,10 +193,6 @@ const ContentSequence: React.FC<{
         </div>
       )}
 
-      {/* Fade overlay */}
-      <AbsoluteFill
-        style={{ backgroundColor: `rgba(0,0,0,${fadeOut})`, pointerEvents: 'none' }}
-      />
     </AbsoluteFill>
   );
 };
@@ -224,7 +213,7 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
   // Build sequence timing — each phrase gets its audio duration + 15-frame breathing room
   let offset = 0;
   const items = segments.map((seg, i) => {
-    const durationFrames = Math.ceil(seg.duration * FPS) + 15;
+    const durationFrames = Math.ceil(seg.duration * FPS) + 2;
     const from = offset;
     offset += durationFrames;
     const audioSrc =
@@ -270,8 +259,11 @@ function makeCalculateMetadata(part: 1 | 2) {
     const data = (await response.json()) as ScriptData;
     const mid = Math.ceil(data.script.length / 2);
     const slice = part === 1 ? data.script.slice(0, mid) : data.script.slice(mid);
+    // Must match the per-segment frame math in <Main> (ceil(dur*FPS) + 2),
+    // otherwise the composition runs longer than the content and ends on
+    // several seconds of silent black background.
     const totalFrames = [data.title, ...slice].reduce(
-      (sum, seg) => sum + Math.ceil(seg.duration * FPS) + 15,
+      (sum, seg) => sum + Math.ceil(seg.duration * FPS) + 2,
       0,
     );
     return {

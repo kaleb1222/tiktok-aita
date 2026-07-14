@@ -64,6 +64,7 @@ def main(post_url):
 
     (selftext, title) = get_post(post_url)
     selftext = re.sub(r"\.", ". ", selftext)
+    selftext = re.sub(r"\bsubmitted by\b.*", "", selftext, flags=re.IGNORECASE).strip()
     selftext = selftext.replace("reddit", "TikTok")
     selftext = selftext + " - What do you think? Doubletap and comment your opinion."
     selftext = selftext.replace("&", " and ")
@@ -115,8 +116,23 @@ def main(post_url):
         i = i+1
 
     final_title = clean_up_text(title)
-    filename = re.sub(r"\s+", "_", final_title).lower()
-    filename = re.sub(r"[^a-zA-Z0-9\_]", "", filename)
+
+    # ── Build a TikTok-SEO title + filename from this specific story ──────────
+    seo_hashtags = ("#redditstories #aita #storytime #reddit "
+                    "#amitheasshole #redditreadings #fyp #redditstorytime")
+    hook = final_title.rstrip(" ?.!")
+    if not re.match(r"(?i)\s*(aita\b|am i the)", hook):
+        hook = f"AITA {hook}"
+    # Readable caption (goes in script.json as seo_title for the TikTok post)
+    seo_title = f"{hook}? \U0001F62E | Reddit AITA Story {seo_hashtags}"
+
+    # SEO filename: keyword-front-loaded, readable, filesystem-safe, length-capped
+    slug_words = re.sub(r"[^a-zA-Z0-9]+", " ", final_title).split()
+    slug = "_".join(slug_words[:12])
+    slug = slug[:90].strip("_")
+    if not re.match(r"(?i)aita", slug):
+        slug = f"AITA_{slug}"
+    filename = re.sub(r"_+", "_", f"{slug}_Reddit_Story_Storytime").strip("_")
 
     audio_out = audio_root.joinpath("title.mp3")
     synthesize_audio(
@@ -133,6 +149,7 @@ def main(post_url):
 
     info = {
         "filename": f"{filename}.mp4",
+        "seo_title": seo_title,
         "text": final_title,
         "emoji": emoji,
         "duration": audio.info.length,
