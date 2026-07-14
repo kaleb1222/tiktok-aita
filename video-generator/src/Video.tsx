@@ -197,7 +197,50 @@ const ContentSequence: React.FC<{
   );
 };
 
+// ─── Outro / follow card (pads short stories up to the 60s minimum) ───────────
+
+const Outro: React.FC = () => {
+  const frame = useCurrentFrame();
+  const pop = interpolate(frame, [0, 8], [0.9, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ textAlign: 'center', padding: '0 60px', transform: `scale(${pop})` }}>
+        <div
+          style={{
+            fontSize: 64,
+            fontWeight: 900,
+            color: '#FFD700',
+            fontFamily: '"Arial Black", Arial, sans-serif',
+            textShadow: OUTLINE,
+            lineHeight: 1.2,
+          }}
+        >
+          👍 Follow for more
+        </div>
+        <div
+          style={{
+            fontSize: 42,
+            fontWeight: 700,
+            color: '#fff',
+            marginTop: 22,
+            fontFamily: 'Arial, sans-serif',
+            textShadow: OUTLINE,
+          }}
+        >
+          💬 Comment your verdict
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 // ─── Root composition ─────────────────────────────────────────────────────────
+
+// TikTok monetization requires videos >= 60s.
+const MIN_FRAMES = 60 * FPS;
 
 export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
   const mid = Math.ceil(scriptData.script.length / 2);
@@ -220,6 +263,11 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
       i === 0 ? staticFile('sounds/title.mp3') : staticFile(`sounds/${seg.audio_file}`);
     return { seg, from, durationFrames, audioSrc, isTitle: i === 0 };
   });
+
+  // Pad the tail with a follow/CTA card so every video is at least 60s.
+  const contentEnd = offset;
+  const totalFrames = Math.max(contentEnd, MIN_FRAMES);
+  const outroFrames = totalFrames - contentEnd;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -247,32 +295,34 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
           />
         </Sequence>
       ))}
+
+      {/* Outro pad — keeps every render >= 60s (mostly relevant for short stories) */}
+      {outroFrames > 0 && (
+        <Sequence from={contentEnd} durationInFrames={outroFrames} name="Outro">
+          <Outro />
+        </Sequence>
+      )}
     </AbsoluteFill>
   );
 };
 
 // ─── Remotion entry point ─────────────────────────────────────────────────────
 
-function makeCalculateMetadata(part: 1 | 2) {
-  return async () => {
-    const response = await fetch(staticFile('script.json'));
-    const data = (await response.json()) as ScriptData;
-    const mid = Math.ceil(data.script.length / 2);
-    const slice = part === 1 ? data.script.slice(0, mid) : data.script.slice(mid);
-    // Must match the per-segment frame math in <Main> (ceil(dur*FPS) + 2),
-    // otherwise the composition runs longer than the content and ends on
-    // several seconds of silent black background.
-    const totalFrames = [data.title, ...slice].reduce(
-      (sum, seg) => sum + Math.ceil(seg.duration * FPS) + 2,
-      0,
-    );
-    return {
-      durationInFrames: totalFrames,
-      fps: FPS,
-      width: WIDTH,
-      height: HEIGHT,
-      props: { scriptData: data, part } as MainProps,
-    };
+// Single full-story video (no part split); enforces the 60s minimum.
+async function calculateMetadataFull() {
+  const response = await fetch(staticFile('script.json'));
+  const data = (await response.json()) as ScriptData;
+  const contentFrames = [data.title, ...data.script].reduce(
+    (sum, seg) => sum + Math.ceil(seg.duration * FPS) + 2,
+    0,
+  );
+  const totalFrames = Math.max(contentFrames, MIN_FRAMES);
+  return {
+    durationInFrames: totalFrames,
+    fps: FPS,
+    width: WIDTH,
+    height: HEIGHT,
+    props: { scriptData: data } as MainProps,
   };
 }
 
@@ -293,11 +343,23 @@ export const RemotionVideo: React.FC = () => {
   return (
     <>
       <Composition
+        id="Full"
+        component={Main}
+        calculateMetadata={calculateMetadataFull}
+        defaultProps={{ ...PLACEHOLDER }}
+        durationInFrames={MIN_FRAMES}
+        fps={FPS}
+        width={WIDTH}
+        height={HEIGHT}
+      />
+      {/* Part1/Part2 kept for the (unchangeable) CI workflow, but both now
+          render the single full >=60s video so every upload is monetizable. */}
+      <Composition
         id="Part1"
         component={Main}
-        calculateMetadata={makeCalculateMetadata(1)}
-        defaultProps={{ ...PLACEHOLDER, part: 1 as const }}
-        durationInFrames={300}
+        calculateMetadata={calculateMetadataFull}
+        defaultProps={{ ...PLACEHOLDER }}
+        durationInFrames={MIN_FRAMES}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
@@ -305,9 +367,9 @@ export const RemotionVideo: React.FC = () => {
       <Composition
         id="Part2"
         component={Main}
-        calculateMetadata={makeCalculateMetadata(2)}
-        defaultProps={{ ...PLACEHOLDER, part: 2 as const }}
-        durationInFrames={300}
+        calculateMetadata={calculateMetadataFull}
+        defaultProps={{ ...PLACEHOLDER }}
+        durationInFrames={MIN_FRAMES}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}

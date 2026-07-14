@@ -49,13 +49,8 @@ OUTPUT=$(python3 -c "import json; d=json.load(open('public/script.json')); print
 BASE="${OUTPUT%.mp4}"
 mkdir -p out
 
-echo "Rendering Part 1 to: out/${BASE}_part1.mp4"
-npx remotion render src/index.tsx Part1 "out/${BASE}_part1.mp4"
-
-echo "Rendering Part 2 to: out/${BASE}_part2.mp4"
-npx remotion render src/index.tsx Part2 "out/${BASE}_part2.mp4"
+echo "Rendering to: out/${BASE}.mp4"
+npx remotion render src/index.tsx Full "out/${BASE}.mp4"
 
 echo ""
-echo "Done!"
-echo "  Part 1: video-generator/out/${BASE}_part1.mp4"
-echo "  Part 2: video-generator/out/${BASE}_part2.mp4"
+echo "Done! Video: video-generator/out/${BASE}.mp4"

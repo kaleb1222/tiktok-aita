@@ -25,7 +25,7 @@ def _synthesize_gtts(text: str, outfile) -> None:
 
 async def _synthesize_edge_async(text: str, outfile, voice: str) -> None:
     import edge_tts
-    communicate = edge_tts.Communicate(text, voice, rate="+50%")
+    communicate = edge_tts.Communicate(text, voice, rate="+25%")
     await communicate.save(str(outfile))
 
 
