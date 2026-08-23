@@ -90,13 +90,44 @@ jobs:
       - name: Install Chromium
         run: cd video-generator && npx remotion browser ensure
 
-      - name: Render videos (Part 1 and Part 2)
+      - name: Render video(s) — split only when both halves clear 60s
         run: |
           cd video-generator
           BASENAME=$(python3 -c "import json,re; d=json.load(open('public/script.json')); fn=d['title']['filename']; print(re.sub(r'\.mp4$', '', fn))")
           mkdir -p out
-          npx remotion render src/index.tsx Part1 "out/${BASENAME}-part1.mp4"
-          npx remotion render src/index.tsx Part2 "out/${BASENAME}-part2.mp4"
+          # Mirror splitIndex() in Video.tsx: cut in half only if BOTH parts
+          # (each replays the title card) still run >= 60s, so every upload
+          # stays eligible for TikTok Creator Rewards.
+          cat > decide_split.py <<'PY'
+          import json
+          FPS, PAD, MIN_SEC = 30, 2, 60
+          d = json.load(open('public/script.json'))
+          sec = lambda s: s['duration'] + PAD / FPS
+          title = sec(d['title'])
+          body = [sec(s) for s in d['script']]
+          split = 'no'
+          if len(body) >= 2 and title * 2 + sum(body) >= MIN_SEC * 2:
+              total = sum(body)
+              middle, acc, best, best_d = total / 2, 0, None, float('inf')
+              for i in range(len(body) - 1):
+                  acc += body[i]
+                  if title + acc < MIN_SEC or title + (total - acc) < MIN_SEC:
+                      continue
+                  if abs(acc - middle) < best_d:
+                      best_d, best = abs(acc - middle), i + 1
+              if best is not None:
+                  split = 'yes'
+          print(split)
+          PY
+          SPLIT=$(python3 decide_split.py)
+          echo "Split into two parts: $SPLIT"
+          if [ "$SPLIT" = "yes" ]; then
+            npx remotion render src/index.tsx Part1 "out/${BASENAME}-part1.mp4"
+            npx remotion render src/index.tsx Part2 "out/${BASENAME}-part2.mp4"
+          else
+            npx remotion render src/index.tsx Full "out/${BASENAME}.mp4"
+          fi
+          ls -la out/
 
       - name: Upload video artifacts
         uses: actions/upload-artifact@v4

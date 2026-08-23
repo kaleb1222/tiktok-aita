@@ -20,3 +20,10 @@ video-generator/out/
 
 # Background video — downloaded by run.sh / GitHub Actions via yt-dlp (87MB, too large to commit)
 video-generator/public/parkour.mp4
+# local browser profiles / sessions (contain login cookies) - never commit
+.browser/
+tpt-upload/.tptbrowser/
+tpt-upload/*.png
+autopost-debug/
+posted.txt
+last_post.txt

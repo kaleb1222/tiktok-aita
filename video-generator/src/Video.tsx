@@ -240,15 +240,57 @@ const Outro: React.FC = () => {
 // ─── Root composition ─────────────────────────────────────────────────────────
 
 // TikTok monetization requires videos >= 60s.
-const MIN_FRAMES = 60 * FPS;
+const MIN_SEC = 60;
+const MIN_FRAMES = MIN_SEC * FPS;
+const PAD_FRAMES = 2; // breathing room appended to each phrase
+
+const segSeconds = (seg: Segment) => seg.duration + PAD_FRAMES / FPS;
+const sum = (a: number[]) => a.reduce((s, n) => s + n, 0);
+
+/**
+ * Where part 2 starts, or null to keep the story whole.
+ *
+ * A story is only cut in half when BOTH halves still clear the 60s
+ * monetization floor (each part replays the title card). That keeps long
+ * stories watchable without making either part ineligible for Creator Rewards.
+ * Of all legal cut points we take the one closest to the middle.
+ */
+export function splitIndex(data: ScriptData): number | null {
+  const body = data.script;
+  if (body.length < 2) return null;
+  const titleSec = segSeconds(data.title);
+  const bodySecs = body.map(segSeconds);
+  const bodyTotal = sum(bodySecs);
+  // fast reject: not enough material for two 60s parts
+  if (titleSec * 2 + bodyTotal < MIN_SEC * 2) return null;
+
+  const middle = bodyTotal / 2;
+  let best: number | null = null;
+  let bestDist = Infinity;
+  let acc = 0;
+  for (let i = 0; i < body.length - 1; i++) {
+    acc += bodySecs[i];
+    const cut = i + 1;
+    const p1 = titleSec + acc;
+    const p2 = titleSec + (bodyTotal - acc);
+    if (p1 < MIN_SEC || p2 < MIN_SEC) continue;
+    const dist = Math.abs(acc - middle);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = cut;
+    }
+  }
+  return best;
+}
 
 export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
-  const mid = Math.ceil(scriptData.script.length / 2);
-  const scriptSlice = !part
+  const mid = splitIndex(scriptData);
+  const isSplit = mid !== null;
+  const scriptSlice = !part || !isSplit
     ? scriptData.script
     : part === 1
-    ? scriptData.script.slice(0, mid)
-    : scriptData.script.slice(mid);
+    ? scriptData.script.slice(0, mid as number)
+    : scriptData.script.slice(mid as number);
 
   const segments = [scriptData.title, ...scriptSlice];
   const lastIdx = segments.length - 1;
@@ -256,7 +298,7 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
   // Build sequence timing — each phrase gets its audio duration + 15-frame breathing room
   let offset = 0;
   const items = segments.map((seg, i) => {
-    const durationFrames = Math.ceil(seg.duration * FPS) + 2;
+    const durationFrames = Math.ceil(seg.duration * FPS) + PAD_FRAMES;
     const from = offset;
     offset += durationFrames;
     const audioSrc =
@@ -282,6 +324,32 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
       {/* Subtle dark overlay so white text stays readable */}
       <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.38)' }} />
 
+      {/* PART 2 banner — on screen from frame 0 so whatever frame TikTok grabs
+          for the thumbnail clearly reads PART 2 */}
+      {part === 2 && isSplit && (
+        <AbsoluteFill style={{ pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', top: 56, left: 0, right: 0, textAlign: 'center' }}>
+            <span
+              style={{
+                display: 'inline-block',
+                background: '#FF2D55',
+                color: '#fff',
+                fontSize: 54,
+                fontWeight: 900,
+                fontFamily: '"Arial Black", Arial, sans-serif',
+                letterSpacing: 5,
+                padding: '10px 34px',
+                borderRadius: 14,
+                border: '5px solid #000',
+                textShadow: OUTLINE,
+              }}
+            >
+              PART 2
+            </span>
+          </div>
+        </AbsoluteFill>
+      )}
+
       {/* Story segments */}
       {items.map(({ seg, from, durationFrames, audioSrc, isTitle }, i) => (
         <Sequence key={i} from={from} durationInFrames={durationFrames} name={isTitle ? 'Title' : `Phrase ${i}`}>
@@ -290,8 +358,12 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
             isTitle={isTitle}
             audioSrc={audioSrc}
             durationFrames={durationFrames}
-            ctaText={!isTitle && i === lastIdx && part === 1 ? '👀 Watch Part 2!' : undefined}
-            showPart2Badge={isTitle && part === 2}
+            ctaText={
+              !isTitle && i === lastIdx && part === 1 && isSplit
+                ? '👀 Watch Part 2!'
+                : undefined
+            }
+            showPart2Badge={false}
           />
         </Sequence>
       ))}
@@ -326,16 +398,43 @@ async function calculateMetadataFull() {
   };
 }
 
-// Part2 is a throwaway stub (the CI workflow file can't be changed by this
-// token's scope, so it still renders a "Part2"). Keep it tiny; the downloader
-// discards it and keeps the full Part1 render.
-async function calculateMetadataStub() {
-  return {
-    durationInFrames: 30,
-    fps: FPS,
-    width: WIDTH,
-    height: HEIGHT,
-    props: { ...PLACEHOLDER } as MainProps,
+// Part1 / Part2 for stories long enough that BOTH halves clear 60s.
+// When a story isn't long enough to split, Part1 renders the whole video and
+// Part2 collapses to a 1-frame stub the workflow never renders / downloader drops.
+function makeCalculateMetadataPart(part: 1 | 2) {
+  return async () => {
+    const response = await fetch(staticFile('script.json'));
+    const data = (await response.json()) as ScriptData;
+    const mid = splitIndex(data);
+    const isSplit = mid !== null;
+
+    if (part === 2 && !isSplit) {
+      return {
+        durationInFrames: 1,
+        fps: FPS,
+        width: WIDTH,
+        height: HEIGHT,
+        props: { scriptData: data, part } as MainProps,
+      };
+    }
+
+    const slice = !isSplit
+      ? data.script
+      : part === 1
+      ? data.script.slice(0, mid as number)
+      : data.script.slice(mid as number);
+
+    const contentFrames = [data.title, ...slice].reduce(
+      (s, seg) => s + Math.ceil(seg.duration * FPS) + PAD_FRAMES,
+      0,
+    );
+    return {
+      durationInFrames: Math.max(contentFrames, MIN_FRAMES),
+      fps: FPS,
+      width: WIDTH,
+      height: HEIGHT,
+      props: { scriptData: data, part } as MainProps,
+    };
   };
 }
 
@@ -365,13 +464,13 @@ export const RemotionVideo: React.FC = () => {
         width={WIDTH}
         height={HEIGHT}
       />
-      {/* Part1/Part2 kept for the (unchangeable) CI workflow, but both now
-          render the single full >=60s video so every upload is monetizable. */}
+      {/* Part1/Part2 — a real split only when both halves clear 60s, otherwise
+          Part1 is the whole (monetizable) video and Part2 is a dropped stub. */}
       <Composition
         id="Part1"
         component={Main}
-        calculateMetadata={calculateMetadataFull}
-        defaultProps={{ ...PLACEHOLDER }}
+        calculateMetadata={makeCalculateMetadataPart(1)}
+        defaultProps={{ ...PLACEHOLDER, part: 1 as const }}
         durationInFrames={MIN_FRAMES}
         fps={FPS}
         width={WIDTH}
@@ -380,9 +479,9 @@ export const RemotionVideo: React.FC = () => {
       <Composition
         id="Part2"
         component={Main}
-        calculateMetadata={calculateMetadataStub}
-        defaultProps={{ ...PLACEHOLDER }}
-        durationInFrames={30}
+        calculateMetadata={makeCalculateMetadataPart(2)}
+        defaultProps={{ ...PLACEHOLDER, part: 2 as const }}
+        durationInFrames={MIN_FRAMES}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}

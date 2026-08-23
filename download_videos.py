@@ -99,7 +99,11 @@ def run():
             zip_bytes = download_artifact_zip(artifact["archive_download_url"], token)
             zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
             mp4_files = [n for n in zf.namelist() if n.endswith(".mp4")]
-            for mp4 in mp4_files:
+            for mp4 in sorted(mp4_files):
+                # Skip stub renders (a skipped Part2 on stories too short to split)
+                if zf.getinfo(mp4).file_size < 1_000_000:
+                    print(f"    Skipping stub: {os.path.basename(mp4)}")
+                    continue
                 dest = os.path.join(DOWNLOAD_DIR, os.path.basename(mp4))
                 # Don't overwrite existing files
                 if os.path.exists(dest):
