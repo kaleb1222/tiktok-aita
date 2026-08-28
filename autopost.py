@@ -205,7 +205,27 @@ def post(video_path, caption, private=False):
             except Exception as e:
                 print("  draft-banner check skipped:", e, flush=True)
 
-            page.set_input_files('input[type="file"]', video_path)
+            # Attach the file, then CONFIRM it took. A silent no-op here (the
+            # SPA re-rendering under us) otherwise burns the full upload timeout
+            # and loses the slot, leaving a pristine "Select video" page.
+            base = os.path.basename(video_path)
+            attached = False
+            for attempt in range(1, 4):
+                page.set_input_files('input[type="file"]', video_path)
+                try:
+                    page.wait_for_function(
+                        r"""(n) => { const t = document.body.innerText;
+                            return t.includes(n.slice(0, 24)) ||
+                                   /Uploading|Uploaded|\d+%|Cancel/.test(t); }""",
+                        arg=base, timeout=45000)
+                    attached = True
+                    break
+                except Exception:
+                    print("  attach didn't take (try %d/3), retrying" % attempt, flush=True)
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_selector('input[type="file"]', state="attached", timeout=30000)
+            if not attached:
+                raise RuntimeError("file never attached to the uploader after 3 tries")
 
             # wait for the upload to reach 100% - the "Cancel/uploading" state
             # must clear before the Post button will actually submit
