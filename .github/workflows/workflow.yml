@@ -100,18 +100,20 @@ jobs:
           # stays eligible for TikTok Creator Rewards.
           cat > decide_split.py <<'PY'
           import json
-          FPS, PAD, MIN_SEC = 30, 2, 60
+          FPS, PAD, MIN_SEC, CUE_SEC = 30, 2, 60, 2.5
           d = json.load(open('public/script.json'))
           sec = lambda s: s['duration'] + PAD / FPS
           title = sec(d['title'])
           body = [sec(s) for s in d['script']]
           split = 'no'
-          if len(body) >= 2 and title * 2 + sum(body) >= MIN_SEC * 2:
+          # Part 1 = title + first half + "continues in Part 2" cue.
+          # Part 2 = second half only (no title re-read).
+          if len(body) >= 2 and title + CUE_SEC + sum(body) >= MIN_SEC * 2:
               total = sum(body)
               middle, acc, best, best_d = total / 2, 0, None, float('inf')
               for i in range(len(body) - 1):
                   acc += body[i]
-                  if title + acc < MIN_SEC or title + (total - acc) < MIN_SEC:
+                  if title + acc + CUE_SEC < MIN_SEC or (total - acc) < MIN_SEC:
                       continue
                   if abs(acc - middle) < best_d:
                       best_d, best = abs(acc - middle), i + 1
