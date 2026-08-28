@@ -93,12 +93,29 @@ def clean_situation(name):
     return t
 
 
+def part_of(name):
+    """1 / 2 for a split story, else None."""
+    m = re.search(r"-part([12])\.mp4$", name, re.I)
+    return int(m.group(1)) if m else None
+
+
 def caption_for(name):
     seed = int(hashlib.md5(name.encode()).hexdigest(), 16)
     hook = HOOKS[seed % len(HOOKS)]
     cta = CTAS[(seed // 7) % len(CTAS)]
     niche = NICHE_TAGS[(seed // 11) % len(NICHE_TAGS)]
     tags = "#aita #redditstories #storytime #reddit #fyp " + niche
+    part = part_of(name)
+    if part == 1:
+        # flag that a second half is coming so viewers come back for it
+        hook = "PART 1 👉 " + hook
+        cta = "Part 2 is up next 👀 " + cta
+        tags += " #part1"
+    elif part == 2:
+        # lead with PART 2 so it reads as the payoff, not a repost
+        hook = "PART 2 🔥 (watch Part 1 first!)"
+        cta = "Now you know the ending — " + cta
+        tags += " #part2"
     # hook first, clean story teaser, verdict CTA, focused tags
     return "%s\n\n%s\n\n%s\n\n%s" % (hook, clean_situation(name), cta, tags)
 
@@ -173,6 +190,21 @@ def post(video_path, caption, private=False):
             page.wait_for_selector('input[type="file"]', state="attached", timeout=60000)
             if "/login" in page.url:
                 raise RuntimeError("session expired - run: python autopost.py --login")
+
+            # A previous failed run can leave an unsaved draft; TikTok then greets
+            # every later visit with "A video you were editing wasn't saved.
+            # Continue editing?" which blocks the uploader. Discard it, otherwise
+            # each failure strands another draft and posting never recovers.
+            try:
+                discard = page.get_by_role("button", name=re.compile(r"^Discard$", re.I))
+                if discard.count():
+                    discard.first.click(timeout=5000)
+                    print("  discarded a leftover draft", flush=True)
+                    page.wait_for_timeout(2000)
+                    page.wait_for_selector('input[type="file"]', state="attached", timeout=30000)
+            except Exception as e:
+                print("  draft-banner check skipped:", e, flush=True)
+
             page.set_input_files('input[type="file"]', video_path)
 
             # wait for the upload to reach 100% - the "Cancel/uploading" state
