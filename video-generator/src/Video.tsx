@@ -237,6 +237,69 @@ const Outro: React.FC = () => {
   );
 };
 
+// ─── "Continues in Part 2" end card (closes Part 1 of a split) ───────────────
+
+const Part2Cue: React.FC = () => {
+  const frame = useCurrentFrame();
+  const pop = interpolate(frame, [0, 10], [0.85, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+  // gentle pulse so it reads as a call to action, not a static card
+  const pulse = 1 + 0.04 * Math.sin(frame / 5);
+  return (
+    <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} />
+      <div style={{ textAlign: 'center', padding: '0 50px', transform: `scale(${pop})` }}>
+        <div
+          style={{
+            fontSize: 92,
+            fontWeight: 900,
+            color: '#fff',
+            fontFamily: '"Arial Black", Arial, sans-serif',
+            textShadow: OUTLINE,
+            lineHeight: 1.05,
+          }}
+        >
+          TO BE
+          <br />
+          CONTINUED
+        </div>
+        <div
+          style={{
+            display: 'inline-block',
+            marginTop: 30,
+            background: '#FF2D55',
+            color: '#fff',
+            fontSize: 62,
+            fontWeight: 900,
+            fontFamily: '"Arial Black", Arial, sans-serif',
+            letterSpacing: 3,
+            padding: '14px 40px',
+            borderRadius: 18,
+            border: '6px solid #000',
+            transform: `scale(${pulse})`,
+          }}
+        >
+          WATCH PART 2
+        </div>
+        <div
+          style={{
+            fontSize: 40,
+            fontWeight: 700,
+            color: '#FFD700',
+            marginTop: 26,
+            fontFamily: 'Arial, sans-serif',
+            textShadow: OUTLINE,
+          }}
+        >
+          👉 On my profile now
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 // ─── Root composition ─────────────────────────────────────────────────────────
 
 // TikTok monetization requires videos >= 60s.
@@ -246,6 +309,10 @@ const PAD_FRAMES = 2; // breathing room appended to each phrase
 
 const segSeconds = (seg: Segment) => seg.duration + PAD_FRAMES / FPS;
 const sum = (a: number[]) => a.reduce((s, n) => s + n, 0);
+
+// "Continues in Part 2" end card shown at the end of Part 1.
+const CUE_SEC = 2.5;
+const CUE_FRAMES = Math.round(CUE_SEC * FPS);
 
 /**
  * Where part 2 starts, or null to keep the story whole.
@@ -261,8 +328,10 @@ export function splitIndex(data: ScriptData): number | null {
   const titleSec = segSeconds(data.title);
   const bodySecs = body.map(segSeconds);
   const bodyTotal = sum(bodySecs);
-  // fast reject: not enough material for two 60s parts
-  if (titleSec * 2 + bodyTotal < MIN_SEC * 2) return null;
+  // Part 1 = title + first half + "continues in Part 2" cue.
+  // Part 2 = second half ONLY (it does not re-read the title).
+  // fast reject: even the best cut can't give two 60s parts
+  if (titleSec + CUE_SEC + bodyTotal < MIN_SEC * 2) return null;
 
   const middle = bodyTotal / 2;
   let best: number | null = null;
@@ -271,8 +340,8 @@ export function splitIndex(data: ScriptData): number | null {
   for (let i = 0; i < body.length - 1; i++) {
     acc += bodySecs[i];
     const cut = i + 1;
-    const p1 = titleSec + acc;
-    const p2 = titleSec + (bodyTotal - acc);
+    const p1 = titleSec + acc + CUE_SEC;
+    const p2 = bodyTotal - acc;
     if (p1 < MIN_SEC || p2 < MIN_SEC) continue;
     const dist = Math.abs(acc - middle);
     if (dist < bestDist) {
@@ -292,23 +361,31 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
     ? scriptData.script.slice(0, mid as number)
     : scriptData.script.slice(mid as number);
 
-  const segments = [scriptData.title, ...scriptSlice];
+  // Part 2 does NOT re-read the title — it drops straight back into the story
+  // (the persistent PART 2 banner tells viewers where they are instead).
+  const isPart2Split = isSplit && part === 2;
+  const isPart1Split = isSplit && part === 1;
+  const segments = isPart2Split ? scriptSlice : [scriptData.title, ...scriptSlice];
   const lastIdx = segments.length - 1;
 
-  // Build sequence timing — each phrase gets its audio duration + 15-frame breathing room
+  // Build sequence timing — each phrase gets its audio duration + breathing room
   let offset = 0;
   const items = segments.map((seg, i) => {
     const durationFrames = Math.ceil(seg.duration * FPS) + PAD_FRAMES;
     const from = offset;
     offset += durationFrames;
-    const audioSrc =
-      i === 0 ? staticFile('sounds/title.mp3') : staticFile(`sounds/${seg.audio_file}`);
-    return { seg, from, durationFrames, audioSrc, isTitle: i === 0 };
+    const isTitle = !isPart2Split && i === 0;
+    const audioSrc = isTitle
+      ? staticFile('sounds/title.mp3')
+      : staticFile(`sounds/${seg.audio_file}`);
+    return { seg, from, durationFrames, audioSrc, isTitle };
   });
 
-  // Pad the tail with a follow/CTA card so every video is at least 60s.
+  // Tail card: Part 1 of a split ends on an explicit "continues in Part 2" cue;
+  // everything else pads with the follow/CTA card. Either way >= 60s.
   const contentEnd = offset;
-  const totalFrames = Math.max(contentEnd, MIN_FRAMES);
+  const minTotal = isPart1Split ? contentEnd + CUE_FRAMES : contentEnd;
+  const totalFrames = Math.max(minTotal, MIN_FRAMES);
   const outroFrames = totalFrames - contentEnd;
 
   return (
@@ -368,10 +445,15 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
         </Sequence>
       ))}
 
-      {/* Outro pad — keeps every render >= 60s (mostly relevant for short stories) */}
+      {/* Tail card: explicit Part 2 hand-off on Part 1, otherwise the follow/CTA
+          pad that keeps every render >= 60s */}
       {outroFrames > 0 && (
-        <Sequence from={contentEnd} durationInFrames={outroFrames} name="Outro">
-          <Outro />
+        <Sequence
+          from={contentEnd}
+          durationInFrames={outroFrames}
+          name={isPart1Split ? 'Part2Cue' : 'Outro'}
+        >
+          {isPart1Split ? <Part2Cue /> : <Outro />}
         </Sequence>
       )}
     </AbsoluteFill>
@@ -424,12 +506,16 @@ function makeCalculateMetadataPart(part: 1 | 2) {
       ? data.script.slice(0, mid as number)
       : data.script.slice(mid as number);
 
-    const contentFrames = [data.title, ...slice].reduce(
+    // Part 2 of a split skips the title; Part 1 gains the "continues" cue card.
+    const segs = isSplit && part === 2 ? slice : [data.title, ...slice];
+    const contentFrames = segs.reduce(
       (s, seg) => s + Math.ceil(seg.duration * FPS) + PAD_FRAMES,
       0,
     );
+    const withCue =
+      isSplit && part === 1 ? contentFrames + CUE_FRAMES : contentFrames;
     return {
-      durationInFrames: Math.max(contentFrames, MIN_FRAMES),
+      durationInFrames: Math.max(withCue, MIN_FRAMES),
       fps: FPS,
       width: WIDTH,
       height: HEIGHT,
