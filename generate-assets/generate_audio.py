@@ -6,8 +6,10 @@ from pathlib import Path
 # Primary: edge-tts (Microsoft neural voices — much more natural)
 # Fallback: gTTS (Google, HTTPS-based, works anywhere including GitHub Actions)
 
-VOICE_FEMALE = "en-US-JennyNeural"
-VOICE_MALE = "en-US-ChristopherNeural"
+# Multilingual neural voices — noticeably warmer and more conversational than
+# the older Jenny/Christopher pair, which read flat for storytime narration.
+VOICE_FEMALE = "en-US-AvaMultilingualNeural"
+VOICE_MALE = "en-US-AndrewMultilingualNeural"
 
 
 def _clean_for_tts(text: str) -> str:
