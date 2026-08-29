@@ -190,6 +190,36 @@ def post(video_path, caption, private=False):
                 }
             }""")
 
+        def robust_click(locator, label, timeout=15000):
+            """Click something TikTok keeps covering.
+
+            Every failure in this flow so far has been the same shape: Playwright
+            RESOLVES the element, then times out because an overlay is on top of
+            it or it is off-screen. So scroll to it, clear overlays, and escalate
+            plain click -> force click -> a real DOM click, instead of waiting out
+            one long actionability timeout and losing the slot.
+            """
+            locator.wait_for(state="visible", timeout=timeout)
+            try:
+                locator.scroll_into_view_if_needed(timeout=8000)
+            except Exception:
+                pass
+            kill_overlays()
+            errs = []
+            for how in ("click", "force", "dom"):
+                try:
+                    if how == "click":
+                        locator.click(timeout=8000)
+                    elif how == "force":
+                        locator.click(timeout=8000, force=True)
+                    else:
+                        locator.evaluate("el => el.click()")
+                    return True
+                except Exception as e:
+                    errs.append("%s:%s" % (how, str(e)[:60]))
+                    kill_overlays()
+            raise RuntimeError("could not click %s (%s)" % (label, " | ".join(errs)))
+
         try:
             page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_selector('input[type="file"]', state="attached", timeout=60000)
@@ -203,7 +233,7 @@ def post(video_path, caption, private=False):
             try:
                 discard = page.get_by_role("button", name=re.compile(r"^Discard$", re.I))
                 if discard.count():
-                    discard.first.click(timeout=5000)
+                    robust_click(discard.first, "Discard draft", timeout=8000)
                     print("  discarded a leftover draft", flush=True)
                     page.wait_for_timeout(2000)
                     page.wait_for_selector('input[type="file"]', state="attached", timeout=30000)
@@ -260,29 +290,24 @@ def post(video_path, caption, private=False):
             kill_overlays()
 
             focused = False
-            for how in ("click", "force", "js"):
-                try:
-                    if how == "click":
-                        box.click(timeout=10000)
-                    elif how == "force":
-                        box.click(timeout=10000, force=True)
-                    else:
-                        page.evaluate(
-                            """() => {
-                                const e = document.querySelector(
-                                    'div.public-DraftEditor-content[contenteditable="true"]')
-                                    || document.querySelector('div[contenteditable="true"]');
-                                if (e) e.focus();
-                            }""")
-                    if page.evaluate(
-                            """() => !!document.activeElement &&
-                                     document.activeElement.closest('[contenteditable="true"]') !== null"""):
-                        focused = True
-                        break
-                    print("  caption focus via %s didn't stick" % how, flush=True)
-                except Exception as e:
-                    print("  caption focus via %s failed: %s" % (how, str(e)[:90]), flush=True)
-                kill_overlays()
+            try:
+                robust_click(box, "caption editor", timeout=30000)
+            except Exception as e:
+                print("  caption click escalation failed: %s" % str(e)[:90], flush=True)
+            if not page.evaluate(
+                    """() => !!document.activeElement &&
+                             document.activeElement.closest('[contenteditable="true"]') !== null"""):
+                # clicking landed but focus didn't stick — focus it directly
+                page.evaluate(
+                    """() => {
+                        const e = document.querySelector(
+                            'div.public-DraftEditor-content[contenteditable="true"]')
+                            || document.querySelector('div[contenteditable="true"]');
+                        if (e) e.focus();
+                    }""")
+            focused = page.evaluate(
+                """() => !!document.activeElement &&
+                         document.activeElement.closest('[contenteditable="true"]') !== null""")
             if not focused:
                 raise RuntimeError("could not focus the caption editor")
 
@@ -313,13 +338,15 @@ def post(video_path, caption, private=False):
             btn = page.locator('button[data-e2e="post_video_button"]')
             if not btn.count():
                 btn = page.get_by_role("button", name=re.compile(r"^Post$", re.I))
-            btn.first.click(timeout=20000)
+            robust_click(btn.first, "Post button", timeout=30000)
 
             # "We're still checking your video... Post now?" confirm dialog
             try:
-                page.get_by_role("button", name=re.compile(r"^Post now$", re.I)).click(timeout=8000)
-            except Exception:
-                pass
+                confirm = page.get_by_role("button", name=re.compile(r"^Post now$", re.I))
+                if confirm.count():
+                    robust_click(confirm.first, "Post now confirm", timeout=8000)
+            except Exception as e:
+                print("  no 'Post now' dialog (%s)" % str(e)[:60], flush=True)
 
             # success = redirected to content manager or a success toast/dialog
             page.wait_for_function(
