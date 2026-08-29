@@ -74,6 +74,10 @@ CTAS = [
 # relevant set over a wall of tags.
 NICHE_TAGS = ["#redditreadings", "#familydrama", "#amitheasshole",
               "#redditstorytime", "#aitareddit", "#storytimes"]
+# Referral promo appended to every caption. This covers the existing
+# backlog too, since captions are built at post time, not baked into the file.
+PROMO = ("🎁 Use code JTMOTJCJ on Tilt Rips — "
+         "deposit $10 and get a FREE $10 pack")
 
 
 def clean_situation(name):
@@ -116,8 +120,9 @@ def caption_for(name):
         hook = "PART 2 🔥 (watch Part 1 first!)"
         cta = "Now you know the ending — " + cta
         tags += " #part2"
-    # hook first, clean story teaser, verdict CTA, focused tags
-    return "%s\n\n%s\n\n%s\n\n%s" % (hook, clean_situation(name), cta, tags)
+    # hook first, clean story teaser, verdict CTA, promo, focused tags
+    return "%s\n\n%s\n\n%s\n\n%s\n\n%s" % (
+        hook, clean_situation(name), cta, PROMO, tags)
 
 
 def notify(msg):

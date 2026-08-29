@@ -197,6 +197,46 @@ const ContentSequence: React.FC<{
   );
 };
 
+// ─── Referral promo (shown on every end card) ────────────────────────────────
+
+const PromoLine: React.FC = () => (
+  <div
+    style={{
+      marginTop: 30,
+      background: 'rgba(0,0,0,0.55)',
+      border: '3px solid #FFD700',
+      borderRadius: 14,
+      padding: '14px 20px',
+      display: 'inline-block',
+    }}
+  >
+    <div
+      style={{
+        fontSize: 34,
+        fontWeight: 900,
+        color: '#FFD700',
+        fontFamily: '"Arial Black", Arial, sans-serif',
+        textShadow: OUTLINE,
+        lineHeight: 1.25,
+      }}
+    >
+      🎁 Code <span style={{ color: '#fff' }}>JTMOTJCJ</span> on Tilt Rips
+    </div>
+    <div
+      style={{
+        fontSize: 27,
+        fontWeight: 700,
+        color: '#fff',
+        marginTop: 6,
+        fontFamily: 'Arial, sans-serif',
+        textShadow: OUTLINE,
+      }}
+    >
+      Deposit $10 → FREE $10 pack
+    </div>
+  </div>
+);
+
 // ─── Outro / follow card (pads short stories up to the 60s minimum) ───────────
 
 const Outro: React.FC = () => {
@@ -232,6 +272,7 @@ const Outro: React.FC = () => {
         >
           💬 Comment your verdict
         </div>
+        <PromoLine />
       </div>
     </AbsoluteFill>
   );
@@ -295,6 +336,7 @@ const Part2Cue: React.FC = () => {
         >
           👉 On my profile now
         </div>
+        <PromoLine />
       </div>
     </AbsoluteFill>
   );
