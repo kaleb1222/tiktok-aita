@@ -2,20 +2,31 @@ import re
 
 from nltk.tokenize import sent_tokenize
 
+# Acronyms are matched on word boundaries. Plain str.replace() mangles anything
+# that merely CONTAINS the token: the AITAH variant became "Am I the A-holeH"
+# on screen, and a bare "AH" rule would turn "AHEAD" into "A-holeEAD".
+# Longest variants first so AITAH is consumed before AITA can match it.
+acronyms = [
+    (r"\bAITAH\b", "Am I the A-hole"),
+    (r"\bAITA\b", "Am I the A-hole"),
+    (r"\bWIBTAH\b", "Would I be the A-hole"),
+    (r"\bWIBTA\b", "Would I be the A-hole"),
+    (r"\bAH\b", "A-hole"),
+    (r"\bMIL\b", "mother-in-law"),
+    (r"\bmil\b", "mother-in-law"),
+]
+
 synonyms = [
-    ("AITA", "Am I the A-hole"),
-    ("WIBTA", "Would I be the A-hole"),
     ("Asshole", "A-hole"),
     ("asshole", "A-hole"),
-    (" mil ", " mother-in-law "),
-    (" MIL ", " mother-in-law "),
-    ("AH", "A-hole"),
     ("fuck", "frick"),
     ("fucking", "fricking")
 ]
 
 
 def clean_up_text(text):
+    for (pattern, replacement) in acronyms:
+        text = re.sub(pattern, replacement, text)
     for (original, replacement) in synonyms:
         text = text.replace(original, replacement)
     return text
