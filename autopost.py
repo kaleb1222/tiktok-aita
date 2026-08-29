@@ -245,16 +245,59 @@ def post(video_path, caption, private=False):
             time.sleep(3)
             kill_overlays()
 
-            # caption box is a DraftJS rich editor - focus, select-all, delete,
-            # then type. filling raw does not clear the pre-filled filename.
-            box = page.locator('div[contenteditable="true"]').first
-            box.click()
+            # Caption box is a DraftJS rich editor. Target its real class rather
+            # than the first contenteditable on the page, scroll it into view, and
+            # fall back to force-click then a JS focus — a plain click times out
+            # whenever an overlay is sitting on top of it.
+            box = page.locator('div.public-DraftEditor-content[contenteditable="true"]').first
+            if not box.count():
+                box = page.locator('div[contenteditable="true"]').first
+            box.wait_for(state="visible", timeout=60000)
+            try:
+                box.scroll_into_view_if_needed(timeout=10000)
+            except Exception:
+                pass
+            kill_overlays()
+
+            focused = False
+            for how in ("click", "force", "js"):
+                try:
+                    if how == "click":
+                        box.click(timeout=10000)
+                    elif how == "force":
+                        box.click(timeout=10000, force=True)
+                    else:
+                        page.evaluate(
+                            """() => {
+                                const e = document.querySelector(
+                                    'div.public-DraftEditor-content[contenteditable="true"]')
+                                    || document.querySelector('div[contenteditable="true"]');
+                                if (e) e.focus();
+                            }""")
+                    if page.evaluate(
+                            """() => !!document.activeElement &&
+                                     document.activeElement.closest('[contenteditable="true"]') !== null"""):
+                        focused = True
+                        break
+                    print("  caption focus via %s didn't stick" % how, flush=True)
+                except Exception as e:
+                    print("  caption focus via %s failed: %s" % (how, str(e)[:90]), flush=True)
+                kill_overlays()
+            if not focused:
+                raise RuntimeError("could not focus the caption editor")
+
             time.sleep(0.5)
             page.keyboard.press("Control+A")
             page.keyboard.press("Backspace")
             time.sleep(0.5)
             page.keyboard.type(caption, delay=8)
             time.sleep(1)
+
+            # confirm the caption actually landed - posting with the raw filename
+            # as the caption would be worse than failing outright
+            probe = caption.split("\n")[0][:18]
+            if probe and probe not in page.inner_text("body"):
+                raise RuntimeError("caption text did not land in the editor")
 
             if private:
                 try:
