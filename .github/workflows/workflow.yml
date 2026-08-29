@@ -106,14 +106,16 @@ jobs:
           title = sec(d['title'])
           body = [sec(s) for s in d['script']]
           split = 'no'
-          # Part 1 = title + first half + "continues in Part 2" cue.
-          # Part 2 = second half only (no title re-read).
-          if len(body) >= 2 and title + CUE_SEC + sum(body) >= MIN_SEC * 2:
+          # Part 1 = title + first half + spoken cue.
+          # Part 2 = second half (no title re-read) + narrated outro.
+          cue = sec(d['cue']) if d.get('cue') else CUE_SEC
+          outro = sec(d['outro']) if d.get('outro') else 0
+          if len(body) >= 2 and title + cue + outro + sum(body) >= MIN_SEC * 2:
               total = sum(body)
               middle, acc, best, best_d = total / 2, 0, None, float('inf')
               for i in range(len(body) - 1):
                   acc += body[i]
-                  if title + acc + CUE_SEC < MIN_SEC or (total - acc) < MIN_SEC:
+                  if title + acc + cue < MIN_SEC or (total - acc) + outro < MIN_SEC:
                       continue
                   if abs(acc - middle) < best_d:
                       best_d, best = abs(acc - middle), i + 1

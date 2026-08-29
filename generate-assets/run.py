@@ -204,11 +204,44 @@ def main(post_url):
         "words": title_words
     }
 
+    # ── Voiced tail cards ────────────────────────────────────────────────────
+    # The outro used to pad short stories with SILENCE, which kills retention
+    # right where the viewer decides to keep watching or scroll. Narrate it.
+    outro_text = (
+        "So what's your verdict? Drop it in the comments, and follow for more "
+        "Reddit stories every single day. And if you rip cards, use code "
+        "J T M O T J C J on Tilt Rips - deposit ten dollars and get a free "
+        "ten dollar pack."
+    )
+    outro_out = audio_root.joinpath("outro.mp3")
+    outro_words = synthesize_audio(text=outro_text, outfile=outro_out,
+                                   gender=gender) or []
+    outro_info = {
+        "text": outro_text,
+        "duration": MP3(outro_out).info.length,
+        "audio_file": outro_out.name,
+        "words": outro_words,
+    }
+
+    # Spoken hand-off closing Part 1 of a split story.
+    cue_text = "To be continued. Part two is on my profile right now, go watch it."
+    cue_out = audio_root.joinpath("cue.mp3")
+    cue_words = synthesize_audio(text=cue_text, outfile=cue_out,
+                                 gender=gender) or []
+    cue_info = {
+        "text": cue_text,
+        "duration": MP3(cue_out).info.length,
+        "audio_file": cue_out.name,
+        "words": cue_words,
+    }
+
     result = {
         "workdir": str(workspace),
         "url": post_url,
         "title": info,
-        "script": final_script
+        "script": final_script,
+        "outro": outro_info,
+        "cue": cue_info
     }
 
     info_out = workspace.joinpath("script.json")

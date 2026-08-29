@@ -36,6 +36,9 @@ type ScriptData = {
   script: Segment[];
   url: string;
   workdir: string;
+  // narrated tail cards (absent on older renders -> silent cards, as before)
+  outro?: Segment;
+  cue?: Segment;
 };
 
 export type MainProps = {
@@ -303,7 +306,7 @@ const PromoLine: React.FC = () => (
 
 // ─── Outro / follow card (pads short stories up to the 60s minimum) ───────────
 
-const Outro: React.FC = () => {
+const Outro: React.FC<{ segment?: Segment }> = ({ segment }) => {
   const frame = useCurrentFrame();
   const pop = interpolate(frame, [0, 8], [0.9, 1], {
     extrapolateLeft: 'clamp',
@@ -311,6 +314,8 @@ const Outro: React.FC = () => {
   });
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      {/* narrated so the tail isn't dead air — silence here loses the viewer */}
+      {segment && <Audio src={staticFile(`sounds/${segment.audio_file}`)} />}
       <div style={{ textAlign: 'center', padding: '0 60px', transform: `scale(${pop})` }}>
         <div
           style={{
@@ -344,7 +349,7 @@ const Outro: React.FC = () => {
 
 // ─── "Continues in Part 2" end card (closes Part 1 of a split) ───────────────
 
-const Part2Cue: React.FC = () => {
+const Part2Cue: React.FC<{ segment?: Segment }> = ({ segment }) => {
   const frame = useCurrentFrame();
   const pop = interpolate(frame, [0, 10], [0.85, 1], {
     extrapolateLeft: 'clamp',
@@ -354,6 +359,8 @@ const Part2Cue: React.FC = () => {
   const pulse = 1 + 0.04 * Math.sin(frame / 5);
   return (
     <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+      {/* spoken hand-off, so Part 1 doesn't end on silence */}
+      {segment && <Audio src={staticFile(`sounds/${segment.audio_file}`)} />}
       <AbsoluteFill style={{ backgroundColor: 'rgba(0,0,0,0.55)' }} />
       <div style={{ textAlign: 'center', padding: '0 50px', transform: `scale(${pop})` }}>
         <div
@@ -434,10 +441,12 @@ export function splitIndex(data: ScriptData): number | null {
   const titleSec = segSeconds(data.title);
   const bodySecs = body.map(segSeconds);
   const bodyTotal = sum(bodySecs);
-  // Part 1 = title + first half + "continues in Part 2" cue.
-  // Part 2 = second half ONLY (it does not re-read the title).
+  // Part 1 = title + first half + spoken "continues in Part 2" cue.
+  // Part 2 = second half (no title re-read) + narrated outro.
+  const cueSec = data.cue ? segSeconds(data.cue) : CUE_SEC;
+  const outroSec = data.outro ? segSeconds(data.outro) : 0;
   // fast reject: even the best cut can't give two 60s parts
-  if (titleSec + CUE_SEC + bodyTotal < MIN_SEC * 2) return null;
+  if (titleSec + cueSec + outroSec + bodyTotal < MIN_SEC * 2) return null;
 
   const middle = bodyTotal / 2;
   let best: number | null = null;
@@ -446,8 +455,8 @@ export function splitIndex(data: ScriptData): number | null {
   for (let i = 0; i < body.length - 1; i++) {
     acc += bodySecs[i];
     const cut = i + 1;
-    const p1 = titleSec + acc + CUE_SEC;
-    const p2 = bodyTotal - acc;
+    const p1 = titleSec + acc + cueSec;
+    const p2 = (bodyTotal - acc) + outroSec;
     if (p1 < MIN_SEC || p2 < MIN_SEC) continue;
     const dist = Math.abs(acc - middle);
     if (dist < bestDist) {
@@ -487,11 +496,17 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
     return { seg, from, durationFrames, audioSrc, isTitle };
   });
 
-  // Tail card: Part 1 of a split ends on an explicit "continues in Part 2" cue;
-  // everything else pads with the follow/CTA card. Either way >= 60s.
+  // Tail card: Part 1 of a split ends on the spoken "continues in Part 2" cue;
+  // everything else ends on the narrated follow/CTA + promo outro. The tail is
+  // always at least as long as its own narration, so the audio is never cut off.
   const contentEnd = offset;
-  const minTotal = isPart1Split ? contentEnd + CUE_FRAMES : contentEnd;
-  const totalFrames = Math.max(minTotal, MIN_FRAMES);
+  const tailSeg = isPart1Split ? scriptData.cue : scriptData.outro;
+  const tailAudioFrames = tailSeg
+    ? Math.ceil(tailSeg.duration * FPS) + PAD_FRAMES
+    : isPart1Split
+    ? CUE_FRAMES
+    : 0;
+  const totalFrames = Math.max(contentEnd + tailAudioFrames, MIN_FRAMES);
   const outroFrames = totalFrames - contentEnd;
 
   return (
@@ -559,7 +574,9 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
           durationInFrames={outroFrames}
           name={isPart1Split ? 'Part2Cue' : 'Outro'}
         >
-          {isPart1Split ? <Part2Cue /> : <Outro />}
+          {isPart1Split
+            ? <Part2Cue segment={scriptData.cue} />
+            : <Outro segment={scriptData.outro} />}
         </Sequence>
       )}
     </AbsoluteFill>
@@ -618,10 +635,15 @@ function makeCalculateMetadataPart(part: 1 | 2) {
       (s, seg) => s + Math.ceil(seg.duration * FPS) + PAD_FRAMES,
       0,
     );
-    const withCue =
-      isSplit && part === 1 ? contentFrames + CUE_FRAMES : contentFrames;
+    // tail must match Main(): spoken cue on split Part 1, narrated outro otherwise
+    const tail = isSplit && part === 1 ? data.cue : data.outro;
+    const tailFrames = tail
+      ? Math.ceil(tail.duration * FPS) + PAD_FRAMES
+      : isSplit && part === 1
+      ? CUE_FRAMES
+      : 0;
     return {
-      durationInFrames: Math.max(withCue, MIN_FRAMES),
+      durationInFrames: Math.max(contentFrames + tailFrames, MIN_FRAMES),
       fps: FPS,
       width: WIDTH,
       height: HEIGHT,
