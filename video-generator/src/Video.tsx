@@ -8,6 +8,7 @@ import {
   interpolate,
   staticFile,
   useCurrentFrame,
+  useVideoConfig,
 } from 'remotion';
 
 const FPS = 30;
@@ -19,11 +20,15 @@ const OUTLINE =
   '-3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000,' +
   ' 0 3px 0 #000, 0 -3px 0 #000, 3px 0 0 #000, -3px 0 0 #000';
 
+type WordTiming = { w: string; t: number; d: number };
+
 type Segment = {
   text: string;
   duration: number;
   audio_file: string;
   emoji?: string;
+  // per-word timings from edge-tts (WordBoundary); absent on older renders
+  words?: WordTiming[];
 };
 
 type ScriptData = {
@@ -39,6 +44,63 @@ export type MainProps = {
 };
 
 // ─── Word-by-word pop-in animation ───────────────────────────────────────────
+
+// Words per on-screen chunk. Small groups keep the caption readable and force
+// it to move with the narration instead of parking a whole paragraph on screen.
+const CHUNK_WORDS = 4;
+
+/** Group word timings into chunks, each held until the next one starts. */
+function buildChunks(words: WordTiming[]) {
+  const chunks: { text: string; start: number; end: number }[] = [];
+  for (let i = 0; i < words.length; i += CHUNK_WORDS) {
+    const grp = words.slice(i, i + CHUNK_WORDS);
+    const last = grp[grp.length - 1];
+    chunks.push({
+      text: grp.map((g) => g.w).join(' ').replace(/\s+([,.!?;:])/g, '$1').trim(),
+      start: grp[0].t,
+      end: last.t + last.d,
+    });
+  }
+  // stretch each chunk to the next one's start so nothing blanks out between them
+  for (let i = 0; i < chunks.length - 1; i++) chunks[i].end = chunks[i + 1].start;
+  if (chunks.length) chunks[chunks.length - 1].end = Number.MAX_SAFE_INTEGER;
+  return chunks;
+}
+
+/** Caption synced to the narration: 3-4 words at a time, swapped on word timings. */
+const SyncedCaption: React.FC<{ words: WordTiming[] }> = ({ words }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const chunks = React.useMemo(() => buildChunks(words), [words]);
+  const idx = Math.max(0, chunks.findIndex((c) => t >= c.start && t < c.end));
+  const active = chunks[idx] || chunks[0];
+  if (!active) return null;
+
+  // small pop as each chunk appears
+  const local = (t - active.start) * fps;
+  const scale = interpolate(local, [0, 4], [0.9, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  });
+
+  return (
+    <div style={{ padding: '0 60px', textAlign: 'center', transform: `scale(${scale})` }}>
+      <span
+        style={{
+          fontSize: 76,
+          fontWeight: 900,
+          color: '#FFD700',
+          fontFamily: '"Arial Black", Arial, sans-serif',
+          textShadow: OUTLINE,
+          lineHeight: 1.3,
+        }}
+      >
+        {active.text}
+      </span>
+    </div>
+  );
+};
 
 const WordAnimation: React.FC<{ text: string }> = ({ text }) => {
   const frame = useCurrentFrame();
@@ -162,7 +224,9 @@ const ContentSequence: React.FC<{
         </div>
       )}
 
-      <WordAnimation text={segment.text} />
+      {segment.words && segment.words.length
+        ? <SyncedCaption words={segment.words} />
+        : <WordAnimation text={segment.text} />}
 
       {/* CTA badge pinned to bottom on all non-title segments */}
       {!isTitle && (

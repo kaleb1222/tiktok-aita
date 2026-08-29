@@ -135,12 +135,13 @@ def main(post_url):
         audio_out = audio_root.joinpath(f"sound-{i}.mp3")
 
         skip_regen = False
+        word_times = []
         if not skip_regen or not audio_out.exists():
-            synthesize_audio(
+            word_times = synthesize_audio(
                 text=phrase,
                 outfile=audio_out,
                 gender=gender
-            )
+            ) or []
 
         if len(phrase.split()) < 35:
             emoji = suggest_emoji(phrase)
@@ -154,7 +155,9 @@ def main(post_url):
             "text": phrase,
             "emoji": emoji,
             "duration": audio.info.length,
-            "audio_file": audio_out.name
+            "audio_file": audio_out.name,
+            # per-word timings so on-screen captions track the narration
+            "words": word_times
         }
         final_script.append(info)
         i = i+1
@@ -179,11 +182,11 @@ def main(post_url):
     filename = re.sub(r"_+", "_", f"{slug}_Reddit_Story_Storytime").strip("_")
 
     audio_out = audio_root.joinpath("title.mp3")
-    synthesize_audio(
+    title_words = synthesize_audio(
         text=final_title,
         outfile=audio_out,
         gender=gender
-    )
+    ) or []
     audio = MP3(audio_out)
 
     emoji = suggest_emoji(final_title) or ""
@@ -197,7 +200,8 @@ def main(post_url):
         "text": final_title,
         "emoji": emoji,
         "duration": audio.info.length,
-        "audio_file": audio_out.name
+        "audio_file": audio_out.name,
+        "words": title_words
     }
 
     result = {
