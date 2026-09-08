@@ -24,6 +24,15 @@ import sys
 import urllib.parse
 import urllib.request
 
+# Pexels contributor names carry arbitrary Unicode; on Windows the default
+# cp1252 console encoding raises inside print() and kills the run *after* a
+# clip has already downloaded. Cost one clip before this was added.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 REPO = "kaleb1222/tiktok-aita"
 TAG = "assets"
 SCRATCH = os.path.join(os.environ.get("TEMP", "/tmp"), "bgwork")
@@ -99,10 +108,14 @@ def pexels_search(query, count, minutes):
            "&size=medium&per_page=%d" % (urllib.parse.quote(query), max(count * 3, 15)))
     req = urllib.request.Request(url)
     req.add_header("Authorization", key)
+    # Pexels' WAF 403s the default Python-urllib UA even with a valid key.
+    req.add_header("User-Agent", "Mozilla/5.0 (compatible; bg-fetch/1.0)")
     with urllib.request.urlopen(req, timeout=60) as r:
         data = json.loads(r.read())
     out = []
-    for v in data.get("videos", []):
+    # Longest first: the renderer loops the clip under an ~80s script, so a
+    # 15s source visibly repeats five times while a 50s one barely cycles.
+    for v in sorted(data.get("videos", []), key=lambda x: -x.get("duration", 0)):
         if v.get("duration", 0) < 10:      # too short to loop without obvious repeats
             continue
         files = [f for f in v.get("video_files", [])
