@@ -67,9 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # List all parkour*.mp4 assets in the release, pick one at random
+          # Every .mp4 in the release is a background clip; pick one at random.
+          # (Was ^parkour.*$ — widened so clips can carry descriptive names
+          # like bg_subway1.mp4 instead of everything pretending to be parkour.)
           VIDEOS=$(gh api repos/${{ github.repository }}/releases/tags/assets \
-            --jq '[.assets[] | select(.name | test("^parkour.*\\.mp4$")) | .name]')
+            --jq '[.assets[] | select(.name | test("\\.mp4$")) | .name]')
           COUNT=$(echo "$VIDEOS" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))")
           IDX=$((RANDOM % COUNT))
           CHOSEN=$(echo "$VIDEOS" | python3 -c "import sys,json; a=json.load(sys.stdin); print(a[int('$IDX')])")

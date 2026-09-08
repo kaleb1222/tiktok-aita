@@ -27,3 +27,9 @@ tpt-upload/*.png
 autopost-debug/
 posted.txt
 last_post.txt
+youtube-upload/.ytbrowser/
+youtube-upload/youtube-debug/
+youtube-upload/posted_youtube.txt
+
+# free-stock API key - never commit
+tools/.pexels_key

@@ -76,16 +76,102 @@ NICHE_TAGS = ["#redditreadings", "#familydrama", "#amitheasshole",
               "#redditstorytime", "#aitareddit", "#storytimes"]
 # Referral promo appended to every caption. This covers the existing
 # backlog too, since captions are built at post time, not baked into the file.
-PROMO = ("🎁 Use code JTMOTJCJ on Tilt Rips — "
+PROMO = ("🎁 Use code UL2IYH9M on Tilt Rips — "
          "deposit $10 and get a FREE $10 pack")
+
+
+# Per-format caption voice. The renderer front-loads the kind into the
+# filename, which is the only thing this script ever sees, so that prefix
+# decides which hooks/CTAs/hashtags a post gets. A story hook on a movie-facts
+# video reads as spam to viewers and to the algorithm.
+KIND_PROFILES = {
+    "TIFU": {
+        "hooks": ["He really did THAT \U0001F62D", "This escalated so fast \U0001F633",
+                  "The regret is unmatched \U0001F480"],
+        "ctas": ["Have you ever done worse? \U0001F447",
+                 "Rate this disaster out of 10 \U0001F4AC"],
+        "tags": "#tifu #redditstories #storytime #reddit #fyp",
+    },
+    "REVENGE": {
+        "hooks": ["The revenge here is PERFECT \U0001F60F",
+                  "They picked the wrong person \U0001F480",
+                  "This is how you handle it \U0001F525"],
+        "ctas": ["Would you have gone further? \U0001F447",
+                 "Rate this revenge out of 10 ⚖️"],
+        "tags": "#pettyrevenge #prorevenge #redditstories #storytime #fyp",
+    },
+    "MALICIOUS": {
+        "hooks": ["They followed the rules EXACTLY \U0001F60F",
+                  "Careful what you ask for \U0001F440"],
+        "ctas": ["Would you have done this? \U0001F447",
+                 "Tell me your own story below \U0001F4AC"],
+        "tags": "#maliciouscompliance #redditstories #storytime #reddit #fyp",
+    },
+    "ENTITLED": {
+        "hooks": ["The AUDACITY of this person \U0001F62E",
+                  "Some people really think that works \U0001F644"],
+        "ctas": ["Have you dealt with worse? \U0001F447",
+                 "How would you have replied? \U0001F4AC"],
+        "tags": "#entitledpeople #choosingbeggars #redditstories #storytime #fyp",
+    },
+    "CONFESSION": {
+        "hooks": ["I was not ready for this one \U0001F633",
+                  "They finally said it out loud \U0001F440"],
+        "ctas": ["Was this wrong? Tell me below \U0001F447",
+                 "What would you have done? \U0001F4AC"],
+        "tags": "#offmychest #confession #redditstories #storytime #fyp",
+    },
+    "HISTORY": {
+        "hooks": ["Today in history is WILD \U0001F633",
+                  "This all happened on this exact day \U0001F4C5"],
+        "ctas": ["Which one shocked you most? \U0001F447",
+                 "Did you know any of these? \U0001F4AC"],
+        "tags": "#history #onthisday #historyfacts #didyouknow #learnontiktok #fyp",
+    },
+    "MOVIEFACTS": {
+        "hooks": ["These movie facts sound FAKE \U0001F92F",
+                  "Number 3 broke my brain \U0001F633",
+                  "You have watched these a hundred times \U0001F440"],
+        "ctas": ["Which one did you already know? \U0001F447",
+                 "Drop a movie fact I missed \U0001F4AC"],
+        "tags": "#movies #moviefacts #filmtok #didyouknow #movietrivia #fyp",
+    },
+    "WOULDYOU": {
+        "hooks": ["Nobody can answer all 5 \U0001F62C",
+                  "These are impossible \U0001F480",
+                  "Pick fast, no thinking ⏱️"],
+        "ctas": ["Comment your answers in order \U0001F447",
+                 "Which one made you pause? \U0001F4AC"],
+        "tags": "#wouldyourather #thisorthat #wyr #comment #hardchoices #fyp",
+    },
+}
+# Every prefix the renderer can emit, longest first so CONFESSION never
+# half-matches something shorter.
+KIND_PREFIXES = sorted(list(KIND_PROFILES) + ["AITA"], key=len, reverse=True)
+KIND_SUFFIXES = ("Reddit_Story_Storytime", "On_This_Day", "Movie_Facts",
+                 "Would_You_Rather")
+
+
+def kind_of(name):
+    """Format prefix baked into the filename by run.py; AITA if absent."""
+    base = os.path.basename(name).upper()
+    for p in KIND_PREFIXES:
+        if base.startswith(p + "_"):
+            return p
+    return "AITA"
 
 
 def clean_situation(name):
     """Turn the (often truncated) filename into readable caption text:
     normalize the AITA prefix, restore obvious apostrophes, drop junk."""
     t = os.path.splitext(name)[0]
-    t = re.sub(r"^AITA_", "", t)
-    t = re.sub(r"_Reddit_Story_Storytime.*$", "", t)
+    kind = kind_of(name)
+    t = re.sub(r"^(%s)_" % "|".join(KIND_PREFIXES), "", t)
+    t = re.sub(r"_(%s).*$" % "|".join(KIND_SUFFIXES), "", t)
+    # TIFU titles literally begin "TIFU by ...", so stripping the prefix leaves
+    # a dangling "by ...". Other prefixes are just format markers, not words.
+    if kind == "TIFU" and not re.match(r"(?i)tifu\b", t):
+        t = "TIFU " + t
     t = t.replace("_", " ")
     t = re.sub(r"(?i)am i the a[- ]?hole[a-z]?", "AITA", t)
     t = re.sub(r"(?i)would i be the a[- ]?hole", "WIBTA", t)
@@ -105,10 +191,16 @@ def part_of(name):
 
 def caption_for(name):
     seed = int(hashlib.md5(name.encode()).hexdigest(), 16)
-    hook = HOOKS[seed % len(HOOKS)]
-    cta = CTAS[(seed // 7) % len(CTAS)]
-    niche = NICHE_TAGS[(seed // 11) % len(NICHE_TAGS)]
-    tags = "#aita #redditstories #storytime #reddit #fyp " + niche
+    prof = KIND_PROFILES.get(kind_of(name))
+    if prof:
+        hook = prof["hooks"][seed % len(prof["hooks"])]
+        cta = prof["ctas"][(seed // 7) % len(prof["ctas"])]
+        tags = prof["tags"]
+    else:   # AITA keeps its original, proven hook/CTA/tag pool
+        hook = HOOKS[seed % len(HOOKS)]
+        cta = CTAS[(seed // 7) % len(CTAS)]
+        niche = NICHE_TAGS[(seed // 11) % len(NICHE_TAGS)]
+        tags = "#aita #redditstories #storytime #reddit #fyp " + niche
     part = part_of(name)
     if part == 1:
         # flag that a second half is coming so viewers come back for it
@@ -133,6 +225,22 @@ def notify(msg):
                        capture_output=True, timeout=60, creationflags=NOWIN)
     except Exception:
         pass
+
+
+def wait_for_network(timeout=300):
+    """Both posting tasks use WakeToRun, so they fire the instant the PC wakes -
+    frequently before Wi-Fi/DNS is actually up. Without this the very first
+    navigation times out and the slot is burned for nothing."""
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(
+                "https://www.google.com/generate_204", timeout=8)
+            return True
+        except Exception:
+            time.sleep(10)
+    return False
 
 
 def readlines(p):
@@ -222,6 +330,23 @@ def post(video_path, caption, private=False):
 
         try:
             page.goto(UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
+
+            # TikTok periodically re-asks for cookie consent, and while that
+            # banner is up the uploader never initialises - no file input ever
+            # appears, so the run dies before it can even screenshot. Answer it
+            # with "Decline optional cookies" (essential cookies only; never
+            # "Allow all") so the page can finish loading.
+            try:
+                for label in ("Decline optional cookies", "Decline all"):
+                    b = page.get_by_role("button", name=re.compile("^%s$" % label, re.I))
+                    if b.count():
+                        b.first.click(timeout=8000)
+                        print("  declined optional cookies", flush=True)
+                        time.sleep(2)
+                        break
+            except Exception as e:
+                print("  cookie banner: %s" % str(e)[:60], flush=True)
+
             page.wait_for_selector('input[type="file"]', state="attached", timeout=60000)
             if "/login" in page.url:
                 raise RuntimeError("session expired - run: python autopost.py --login")
@@ -324,6 +449,21 @@ def post(video_path, caption, private=False):
             if probe and probe not in page.inner_text("body"):
                 raise RuntimeError("caption text did not land in the editor")
 
+            # The caption ends in a hashtag, which leaves TikTok's tag-suggestion
+            # dropdown open. It floats over the lower half of the form - Post
+            # included - so clicks land in the dropdown instead of on the button.
+            # Escape + blur closes it without clicking anything (a stray click
+            # here is how the Discard dialog kept appearing).
+            try:
+                page.keyboard.press("Escape")
+                time.sleep(0.4)
+                page.evaluate(
+                    "() => { const e = document.activeElement;"
+                    "        if (e && e.blur) e.blur(); }")
+                time.sleep(0.8)
+            except Exception:
+                pass
+
             if private:
                 try:
                     kill_overlays()
@@ -334,11 +474,57 @@ def post(video_path, caption, private=False):
                 except Exception:
                     print("note: could not set Only-you privacy")
 
-            kill_overlays()
+            def dismiss_discard():
+                """Answer TikTok's "Discard this post?" prompt with Not now.
+
+                NEVER let this dialog sit open, and never click Discard: Post /
+                Save draft / Discard sit side by side, so a stray click here
+                throws the whole upload away. Two slots were lost this way.
+                """
+                try:
+                    if not page.get_by_text(
+                            re.compile(r"Discard this post", re.I)).count():
+                        return False
+                    page.get_by_role(
+                        "button", name=re.compile(r"^Not now$", re.I)
+                    ).first.click(timeout=6000)
+                    print("  dismissed a 'Discard this post?' dialog", flush=True)
+                    time.sleep(1)
+                    return True
+                except Exception:
+                    return False
+
+            # Wait for Post to be genuinely enabled before touching it - clicking
+            # a disabled button does nothing and the escalation ladder then
+            # hammers the area beside Discard.
+            # Do NOT gate on the "Content check" banner: TikTok says outright
+            # "You can still post" while that runs, so waiting for it to clear
+            # just burns the slot for no reason.
+            deadline = time.time() + 8 * 60
+            while time.time() < deadline:
+                dismiss_discard()
+                kill_overlays()
+                try:
+                    ready = page.evaluate(
+                        """() => {
+                            const b = document.querySelector(
+                                'button[data-e2e="post_video_button"]');
+                            if (!b) return false;
+                            return !(b.disabled ||
+                                     b.getAttribute('aria-disabled') === 'true'); }""")
+                except Exception:
+                    ready = False
+                if ready:
+                    break
+                time.sleep(10)
+            else:
+                raise RuntimeError("Post button stayed disabled for 8 min")
+
             btn = page.locator('button[data-e2e="post_video_button"]')
             if not btn.count():
                 btn = page.get_by_role("button", name=re.compile(r"^Post$", re.I))
             robust_click(btn.first, "Post button", timeout=30000)
+            dismiss_discard()
 
             # "We're still checking your video... Post now?" confirm dialog
             try:
@@ -348,12 +534,25 @@ def post(video_path, caption, private=False):
             except Exception as e:
                 print("  no 'Post now' dialog (%s)" % str(e)[:60], flush=True)
 
-            # success = redirected to content manager or a success toast/dialog
-            page.wait_for_function(
-                """() => location.pathname.includes('/content') ||
-                         /your video has been|posted|Manage your posts/i
-                            .test(document.body.innerText)""",
-                timeout=180000)
+            # success = redirected to content manager or a success toast/dialog.
+            # Poll rather than one long wait_for_function, so a "Discard this
+            # post?" prompt that appears mid-wait gets answered instead of
+            # sitting there until the timeout expires.
+            ok, deadline = False, time.time() + 180
+            while time.time() < deadline:
+                dismiss_discard()
+                try:
+                    ok = page.evaluate(
+                        """() => location.pathname.includes('/content') ||
+                                 /your video has been|posted|Manage your posts/i
+                                    .test(document.body.innerText || '')""")
+                except Exception:
+                    ok = False
+                if ok:
+                    break
+                time.sleep(5)
+            if not ok:
+                raise RuntimeError("no post confirmation after 3 min")
             time.sleep(2)
             page.screenshot(path=shot)
             return True, shot
@@ -404,6 +603,13 @@ def main():
         print("caption:", cap)
         return
     keep_awake(True)      # released in the finally below
+
+    if not wait_for_network():
+        notify("⚠️ **TikTok auto-post skipped** - no network after "
+               "5 min (PC likely just woke). Video stays queued.")
+        print("no network - aborting without consuming the video")
+        keep_awake(False)
+        return
 
     # anti-burst guard: if we already posted very recently (overlapping
     # triggers, manual re-run), skip rather than fire a second time close together

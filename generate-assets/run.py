@@ -165,21 +165,52 @@ def main(post_url):
     final_title = clean_up_text(title)
 
     # ── Build a TikTok-SEO title + filename from this specific story ──────────
-    seo_hashtags = ("#redditstories #aita #storytime #reddit "
-                    "#amitheasshole #redditreadings #fyp #redditstorytime")
-    hook = final_title.rstrip(" ?.!")
-    if not re.match(r"(?i)\s*(aita\b|am i the)", hook):
-        hook = f"AITA {hook}"
-    # Readable caption (goes in script.json as seo_title for the TikTok post)
-    seo_title = f"{hook}? \U0001F62E | Reddit AITA Story {seo_hashtags}"
+    # Per-format SEO. Stamping AITA hashtags on a movie-facts video reads as
+    # spam to viewers and to the algorithm, so each kind gets its own set.
+    # The kind is also front-loaded into the filename because that filename is
+    # the ONLY thing autopost.py sees when it builds the caption.
+    kind = "aita"
+    try:
+        with open(CACHE_FILE) as _f:
+            kind = json.load(_f).get("kind", "aita")
+    except Exception:
+        pass
 
-    # SEO filename: keyword-front-loaded, readable, filesystem-safe, length-capped
+    KIND_STYLE = {
+        "aita":        ("AITA",        "Reddit_Story_Storytime",
+                        "#redditstories #aita #storytime #reddit #amitheasshole #fyp"),
+        "tifu":        ("TIFU",        "Reddit_Story_Storytime",
+                        "#tifu #redditstories #storytime #reddit #fyp #redditreadings"),
+        "revenge":     ("REVENGE",     "Reddit_Story_Storytime",
+                        "#pettyrevenge #prorevenge #redditstories #storytime #reddit #fyp"),
+        "malicious":   ("MALICIOUS",   "Reddit_Story_Storytime",
+                        "#maliciouscompliance #redditstories #storytime #reddit #fyp"),
+        "entitled":    ("ENTITLED",    "Reddit_Story_Storytime",
+                        "#entitledpeople #choosingbeggars #redditstories #storytime #fyp"),
+        "offmychest":  ("CONFESSION",  "Reddit_Story_Storytime",
+                        "#offmychest #confession #redditstories #storytime #reddit #fyp"),
+        "onthisday":   ("HISTORY",     "On_This_Day",
+                        "#history #onthisday #historyfacts #didyouknow #fyp #learnontiktok"),
+        "movietrivia": ("MOVIEFACTS",  "Movie_Facts",
+                        "#movies #moviefacts #filmtok #didyouknow #fyp #movietrivia"),
+        "wyr":         ("WOULDYOU",    "Would_You_Rather",
+                        "#wouldyourather #thisorthat #wyr #fyp #comment #hardchoices"),
+    }
+    prefix, suffix, seo_hashtags = KIND_STYLE.get(kind, KIND_STYLE["aita"])
+
+    hook = final_title.rstrip(" ?.!")
+    if kind == "aita" and not re.match(r"(?i)\s*(aita\b|am i the)", hook):
+        hook = f"AITA {hook}"
+    tail = "?" if kind in ("aita", "wyr") else ""
+    # Readable caption (goes in script.json as seo_title for the TikTok post)
+    seo_title = f"{hook}{tail} \U0001F62E | {seo_hashtags}"
+
+    # SEO filename: kind first, then keywords, filesystem-safe, length-capped
     slug_words = re.sub(r"[^a-zA-Z0-9]+", " ", final_title).split()
-    slug = "_".join(slug_words[:12])
-    slug = slug[:90].strip("_")
-    if not re.match(r"(?i)aita", slug):
-        slug = f"AITA_{slug}"
-    filename = re.sub(r"_+", "_", f"{slug}_Reddit_Story_Storytime").strip("_")
+    slug = "_".join(slug_words[:12])[:80].strip("_")
+    if not slug.upper().startswith(prefix):
+        slug = f"{prefix}_{slug}"
+    filename = re.sub(r"_+", "_", f"{slug}_{suffix}").strip("_")
 
     audio_out = audio_root.joinpath("title.mp3")
     title_words = synthesize_audio(
