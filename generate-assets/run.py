@@ -1,11 +1,19 @@
 import json
 import re
-import readline
 import sys
+
+try:
+    import readline          # Unix-only stdlib; the CI runner has it
+except ImportError:          # Windows does not, and only pinput() below needs it
+    readline = None
 import urllib.request
 import xml.etree.ElementTree as ET
 from html import unescape
 from pathlib import Path
+
+# referral.py lives at the repo root, one level up from this script.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import referral  # noqa: E402
 
 from mutagen.mp3 import MP3
 
@@ -17,6 +25,9 @@ user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 
 
 
 def pinput(prompt, text):
+    if readline is None:      # no line editing available - prompt plainly
+        return input("%s[%s] " % (prompt, text)) or text
+
     def hook():
         readline.insert_text(text)
         readline.redisplay()
@@ -238,12 +249,15 @@ def main(post_url):
     # ── Voiced tail cards ────────────────────────────────────────────────────
     # The outro used to pad short stories with SILENCE, which kills retention
     # right where the viewer decides to keep watching or scroll. Narrate it.
+    # The code is letter-spaced by referral.spoken_offer() so the TTS reads it
+    # out instead of mangling it as a word. Sharing the module with
+    # autopost.py is what stops the spoken and written codes drifting apart.
+    # spoken_offer() is "" while referral.ENABLED is False; strip so the outro
+    # does not end on a trailing space the voice pauses over.
     outro_text = (
         "So what's your verdict? Drop it in the comments, and follow for more "
-        "Reddit stories every single day. And if you rip cards, use code "
-        "J T M O T J C J on Tilt Rips - deposit ten dollars and get a free "
-        "ten dollar pack."
-    )
+        "Reddit stories every single day. " + referral.spoken_offer()
+    ).strip()
     outro_out = audio_root.joinpath("outro.mp3")
     outro_words = synthesize_audio(text=outro_text, outfile=outro_out,
                                    gender=gender) or []
