@@ -56,6 +56,19 @@ def spoken_offer(code=CODE):
             % spoken_code(code))
 
 
+def end_card(code=CODE):
+    """The promo box drawn on the video's end card, or None while ENABLED is False.
+
+    This used to be hardcoded in video-generator/src/Video.tsx, where it kept showing
+    the dead code JTMOTJCJ on every end card even after ENABLED was switched off on
+    2026-09-13. run.py now writes this into script.json and Video.tsx only draws what
+    it is given, so all three places (caption, narration, end card) share one switch.
+    """
+    if not ENABLED:
+        return None
+    return {"headline": "🎁 Code %s on Tilt Rips" % code, "sub": "Deposit $10 → FREE $10 pack"}
+
+
 def caption_promo(code=CODE, link=LINK):
     """The caption line. Mentions the bio link only once there is one.
 

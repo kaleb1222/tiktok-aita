@@ -39,7 +39,11 @@ type ScriptData = {
   // narrated tail cards (absent on older renders -> silent cards, as before)
   outro?: Segment;
   cue?: Segment;
+  // end-card promo from referral.end_card(); null/absent = no promo box
+  promo?: Promo | null;
 };
+
+type Promo = { headline: string; sub?: string };
 
 export type MainProps = {
   scriptData: ScriptData;
@@ -264,9 +268,9 @@ const ContentSequence: React.FC<{
   );
 };
 
-// ─── Referral promo (shown on every end card) ────────────────────────────────
+// ─── Referral promo (end card; text + on/off come from referral.py) ────────────────────────────────
 
-const PromoLine: React.FC = () => (
+const PromoLine: React.FC<{ promo?: Promo | null }> = ({ promo }) => !promo ? null : (
   <div
     style={{
       marginTop: 30,
@@ -287,7 +291,7 @@ const PromoLine: React.FC = () => (
         lineHeight: 1.25,
       }}
     >
-      🎁 Code <span style={{ color: '#fff' }}>JTMOTJCJ</span> on Tilt Rips
+      {promo.headline}
     </div>
     <div
       style={{
@@ -299,14 +303,14 @@ const PromoLine: React.FC = () => (
         textShadow: OUTLINE,
       }}
     >
-      Deposit $10 → FREE $10 pack
+      {promo.sub}
     </div>
   </div>
 );
 
 // ─── Outro / follow card (pads short stories up to the 60s minimum) ───────────
 
-const Outro: React.FC<{ segment?: Segment }> = ({ segment }) => {
+const Outro: React.FC<{ segment?: Segment; promo?: Promo | null }> = ({ segment, promo }) => {
   const frame = useCurrentFrame();
   const pop = interpolate(frame, [0, 8], [0.9, 1], {
     extrapolateLeft: 'clamp',
@@ -341,7 +345,7 @@ const Outro: React.FC<{ segment?: Segment }> = ({ segment }) => {
         >
           💬 Comment your verdict
         </div>
-        <PromoLine />
+        <PromoLine promo={promo} />
       </div>
     </AbsoluteFill>
   );
@@ -349,7 +353,7 @@ const Outro: React.FC<{ segment?: Segment }> = ({ segment }) => {
 
 // ─── "Continues in Part 2" end card (closes Part 1 of a split) ───────────────
 
-const Part2Cue: React.FC<{ segment?: Segment }> = ({ segment }) => {
+const Part2Cue: React.FC<{ segment?: Segment; promo?: Promo | null }> = ({ segment, promo }) => {
   const frame = useCurrentFrame();
   const pop = interpolate(frame, [0, 10], [0.85, 1], {
     extrapolateLeft: 'clamp',
@@ -407,7 +411,7 @@ const Part2Cue: React.FC<{ segment?: Segment }> = ({ segment }) => {
         >
           👉 On my profile now
         </div>
-        <PromoLine />
+        <PromoLine promo={promo} />
       </div>
     </AbsoluteFill>
   );
@@ -575,8 +579,8 @@ export const Main: React.FC<MainProps> = ({ scriptData, part }) => {
           name={isPart1Split ? 'Part2Cue' : 'Outro'}
         >
           {isPart1Split
-            ? <Part2Cue segment={scriptData.cue} />
-            : <Outro segment={scriptData.outro} />}
+            ? <Part2Cue segment={scriptData.cue} promo={scriptData.promo} />
+            : <Outro segment={scriptData.outro} promo={scriptData.promo} />}
         </Sequence>
       )}
     </AbsoluteFill>

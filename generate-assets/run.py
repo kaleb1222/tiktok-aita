@@ -286,7 +286,9 @@ def main(post_url):
         "title": info,
         "script": final_script,
         "outro": outro_info,
-        "cue": cue_info
+        "cue": cue_info,
+        # End-card promo box; None hides it. Same switch as the caption + narration.
+        "promo": referral.end_card(),
     }
 
     info_out = workspace.joinpath("script.json")
