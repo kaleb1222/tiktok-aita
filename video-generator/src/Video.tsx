@@ -293,18 +293,20 @@ const PromoLine: React.FC<{ promo?: Promo | null }> = ({ promo }) => !promo ? nu
     >
       {promo.headline}
     </div>
-    <div
-      style={{
-        fontSize: 27,
-        fontWeight: 700,
-        color: '#fff',
-        marginTop: 6,
-        fontFamily: 'Arial, sans-serif',
-        textShadow: OUTLINE,
-      }}
-    >
-      {promo.sub}
-    </div>
+    {promo.sub ? (
+      <div
+        style={{
+          fontSize: 27,
+          fontWeight: 700,
+          color: '#fff',
+          marginTop: 6,
+          fontFamily: 'Arial, sans-serif',
+          textShadow: OUTLINE,
+        }}
+      >
+        {promo.sub}
+      </div>
+    ) : null}
   </div>
 );
 
