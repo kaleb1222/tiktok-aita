@@ -34,11 +34,13 @@ CACHE_FILE = "/tmp/reddit_post.json"
 # How the feed is paced. AITA keeps the most slots because it is the format
 # with 70 posts of proven performance; the rest break up the monotony so the
 # account does not read as a single-note bot.
+# movietrivia was dropped 2026-09-29: the "facts that sound fake" videos underperformed, so its two
+# slots went back to AITA. fetch_movietrivia() stays available but is no longer scheduled.
 ROTATION = [
-    "aita", "tifu", "movietrivia",
+    "aita", "tifu", "aita",
     "aita", "revenge", "wyr",
     "aita", "malicious", "onthisday",
-    "aita", "entitled", "movietrivia",
+    "aita", "entitled", "aita",
     "aita", "offmychest", "wyr",
 ]
 
